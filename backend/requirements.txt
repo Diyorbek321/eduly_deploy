@@ -1,0 +1,24 @@
+# Eduly Backend — Python Dependencies
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+pydantic[email]==2.10.3
+pydantic-settings==2.7.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.18
+psycopg2-binary==2.9.10
+slowapi==0.1.9
+# Redis-backed login lockout + slowapi rate-limit storage. Optional at
+# runtime (gated by REDIS_URL env var) but REQUIRED before running
+# multi-worker uvicorn in production — otherwise both lockout and
+# rate-limit state are per-process and trivially bypassable.
+redis==5.2.1
+limits[redis]==3.13.0
+alembic==1.18.4
+requests==2.32.3
+apscheduler==3.10.4
+
+# ── Tests (dev only) ─────────────────────────────────────────
+pytest==8.3.4
+httpx==0.27.2

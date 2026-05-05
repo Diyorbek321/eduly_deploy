@@ -1,0 +1,55 @@
+# ── Dependencies ─────────────────────────────────────────
+node_modules/
+**/node_modules/
+backend/venv/
+backend/.venv/
+
+# ── Build outputs ────────────────────────────────────────
+build/
+dist/
+**/dist/
+coverage/
+
+# ── Logs ─────────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ── OS / Editor ──────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+
+# ── Env files (SECRETS!) ─────────────────────────────────
+.env
+.env.local
+.env.production
+.env.*.local
+backend/.env
+backend/.env.local
+# Keep example/template files (no real secrets inside)
+!.env.example
+!.env.production.example
+!**/.env.example
+!**/.env.production.example
+
+# ── Databases ────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Mobile builds (juda katta, GitHub'da kerak emas) ────
+*.apk
+*.aab
+*.ipa
+
+# ── Misc ─────────────────────────────────────────────────
+e4b0d5f6a7b8,

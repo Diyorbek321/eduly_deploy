@@ -1,0 +1,215 @@
+================================================================
+  EDULY — Frontend ↔ Backend Connection Guide
+================================================================
+
+OVERVIEW
+--------
+Frontend: React (Vite) on http://localhost:3000
+Backend:  FastAPI on http://localhost:8000
+All API calls go through /api/* prefix.
+
+
+================================================================
+STEP 1: PROXY SETUP (Vite → FastAPI)
+================================================================
+
+In vite.config.ts, add a proxy so that any request from the
+frontend to /api/* gets forwarded to the backend:
+
+  server.proxy = {
+    "/api": {
+      target: "http://localhost:8000",
+      changeOrigin: true
+    }
+  }
+
+This means:
+  - Frontend calls fetch("/api/students") 
+  - Vite dev server forwards it to http://localhost:8000/api/students
+  - No CORS issues in development
+
+NOTE: The proxy only works in dev mode (npm run dev).
+For production, use nginx or similar to route /api to the backend.
+
+
+================================================================
+STEP 2: API CLIENT (Axios)
+================================================================
+
+The project already uses Axios. Create a shared Axios instance
+in src/lib/api.ts:
+
+  - baseURL: "/api" (uses the Vite proxy)
+  - Interceptor: attach JWT token from localStorage to every
+    request as Authorization: Bearer <token>
+  - Response interceptor: on 401, redirect to /login
+
+This single file is the bridge between frontend and backend.
+Every page/context will import this api client.
+
+
+================================================================
+STEP 3: AUTH FLOW
+================================================================
+
+1. Login page sends POST /api/auth/login with {username, password}
+2. Backend returns {access_token, token_type, user}
+3. Frontend stores access_token in localStorage
+4. AuthContext reads the token and provides useAuth() hook
+5. Every subsequent API call includes the token via Axios interceptor
+6. On logout: remove token from localStorage, redirect to /login
+
+Where to change:
+  - src/contexts/AuthContext.tsx — replace mock login with
+    real API call to POST /api/auth/login
+
+
+================================================================
+STEP 4: REPLACE MOCK DATA WITH API CALLS
+================================================================
+
+Currently, pages use hardcoded mock data arrays. Replace each
+one with API calls using the Axios client:
+
+  PAGE                  MOCK DATA → API ENDPOINT
+  ─────────────────────────────────────────────────
+  StudentsPage          mockStudents → GET /api/students
+  StudentProfilePage    find by id   → GET /api/students/{id}
+  TeachersPage          mockTeachers → GET /api/teachers
+  TeacherProfilePage    find by id   → GET /api/teachers/{id}
+  CoursesPage           mockCourses  → GET /api/courses
+  GroupsPage            mockGroups   → GET /api/groups
+  AttendancePage        mockData     → GET /api/attendances
+  PaymentsPage          mockPayments → GET /api/payments
+  SalariesPage          mockSalaries → GET /api/salaries
+  DashboardPage         mockStats    → GET /api/dashboard/stats
+
+Pattern for each page:
+  1. Add useState for data + loading + error
+  2. Add useEffect that calls the API on mount
+  3. Remove the hardcoded mock array
+  4. Pass API data to the table/cards instead of mock data
+  5. Wire up Create/Edit/Delete buttons to POST/PUT/DELETE
+
+
+================================================================
+STEP 5: FORMS → API (Create / Update / Delete)
+================================================================
+
+Each page has modal forms for creating/editing items.
+Connect them like this:
+
+  CREATE:
+    - Form onSubmit → POST /api/{resource}
+    - On success → refresh the list (re-fetch GET)
+    - On error → show error message
+
+  UPDATE:
+    - Form onSubmit → PUT /api/{resource}/{id}
+    - On success → refresh the list
+    - On error → show error message
+
+  DELETE:
+    - Confirm dialog → DELETE /api/{resource}/{id}
+    - On success → remove item from state or re-fetch
+
+The project uses React Hook Form + Zod, so the validation
+schemas stay the same — just wire onSubmit to the API.
+
+
+================================================================
+STEP 6: SPECIFIC FEATURES
+================================================================
+
+ATTENDANCE (Bulk):
+  - The attendance page shows a group's students for a date
+  - On save → POST /api/attendances/bulk with:
+    { group_id, date, records: [{student_id, status}] }
+
+PAYMENTS (Auto-updates student debt):
+  - POST /api/payments creates payment AND updates student.paid/debt
+  - No need to manually update student after payment
+
+SALARY PAY:
+  - POST /api/salaries/{id}/pay marks salary as paid
+  - Separate from the edit endpoint
+
+DASHBOARD CHARTS:
+  - GET /api/dashboard/stats → stat cards
+  - GET /api/dashboard/revenue-chart → Recharts data
+  - GET /api/dashboard/attendance-chart → Recharts data
+
+
+================================================================
+STEP 7: RECOMMENDED ORDER OF WORK
+================================================================
+
+  1. Vite proxy setup (1 file: vite.config.ts)
+  2. API client with interceptors (1 new file: src/lib/api.ts)
+  3. AuthContext → real login (1 file)
+  4. DashboardPage (simplest — just GET stats)
+  5. CoursesPage (simple CRUD, no nested resources)
+  6. TeachersPage + TeacherProfilePage
+  7. StudentsPage + StudentProfilePage
+  8. GroupsPage (has enrollment sub-routes)
+  9. PaymentsPage
+  10. SalariesPage
+  11. AttendancePage (bulk create)
+
+Each step is independent. Test after each one.
+
+
+================================================================
+STEP 8: DATA TYPE MAPPING
+================================================================
+
+Frontend types (src/types.ts) vs Backend response fields:
+
+  FRONTEND FIELD      BACKEND FIELD       NOTES
+  ──────────────────────────────────────────────────
+  student.id          string → number     Frontend uses string IDs,
+                                          backend uses integer IDs.
+                                          Convert with String(id).
+
+  student.group       string              Frontend shows group name.
+                                          Use GET /students/{id}/groups
+                                          to get group list.
+
+  student.attendance  number (%)          Computed on frontend from
+                                          GET /students/{id}/attendances
+
+  teacher.groupsCount number              Backend computes this from
+                                          relationships automatically.
+
+  teacher.salary      number              Frontend can sum from
+                                          GET /teachers/{id}/salaries
+
+  transaction.studentName  string         Backend returns student_name
+                                          inside PaymentOut schema.
+
+  course.price        string → number     Frontend has string price,
+                                          backend returns float.
+
+  course.groupsCount  number              Backend computes from
+                                          relationships.
+
+
+================================================================
+SUMMARY
+================================================================
+
+Files to create:
+  - src/lib/api.ts (Axios instance with JWT interceptor)
+
+Files to modify:
+  - vite.config.ts (add proxy)
+  - src/contexts/AuthContext.tsx (real login)
+  - Each page file (replace mock → API calls)
+
+Files NOT to touch:
+  - src/types.ts (keep as-is, adapt in pages)
+  - src/components/* (UI components stay the same)
+  - Backend code (already complete)
+
+Total estimated effort: ~2-3 hours for full integration.
+================================================================

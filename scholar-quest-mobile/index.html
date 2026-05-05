@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Scholar Quest</title>
+    <style>
+      /* Inline so it paints before any external CSS loads. Used as the
+         "JS failed entirely" fallback inside #root below — if React mounts
+         successfully it overwrites these nodes within ~50ms. */
+      html, body { margin: 0; padding: 0; background: #fff7ed; color: #111; font-family: system-ui, -apple-system, sans-serif; }
+      .sq-boot { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+      .sq-boot__card { max-width: 360px; text-align: center; }
+      .sq-boot__logo { width: 56px; height: 56px; border-radius: 16px; background: #ec5b13; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 24px; margin-bottom: 16px; }
+      .sq-boot__title { font-size: 20px; font-weight: 800; margin: 0 0 8px; }
+      .sq-boot__msg { font-size: 14px; color: #555; margin: 0 0 16px; }
+      .sq-boot__spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid #ec5b13; border-right-color: transparent; border-radius: 50%; animation: sq-spin 0.8s linear infinite; }
+      @keyframes sq-spin { to { transform: rotate(360deg); } }
+      .sq-boot__hint { display: block; font-size: 12px; color: #888; margin-top: 14px; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="sq-boot">
+        <div class="sq-boot__card">
+          <div class="sq-boot__logo">SQ</div>
+          <p class="sq-boot__title">Scholar Quest</p>
+          <p class="sq-boot__msg">Yuklanmoqda…</p>
+          <div class="sq-boot__spinner"></div>
+          <span class="sq-boot__hint">Agar bu yozuv 10 soniyadan ortiq tursa, ilovani yopib qayta oching.</span>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

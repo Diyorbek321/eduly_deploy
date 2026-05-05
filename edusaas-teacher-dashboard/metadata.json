@@ -1,0 +1,5 @@
+{
+  "name": "EduSaaS Teacher Dashboard",
+  "description": "Teacher and Support Teacher dashboard for EduSaaS platform with scheduling, attendance, homework, and chat features.",
+  "requestFramePermissions": []
+}

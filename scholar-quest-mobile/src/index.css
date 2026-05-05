@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-headline: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Manrope", ui-sans-serif, system-ui, sans-serif;
+
+  --color-primary: #4647d3;
+  --color-primary-dim: #3939c7;
+  --color-primary-container: #9396ff;
+  
+  --color-secondary: #006a2d;
+  --color-secondary-dim: #005d26;
+  --color-secondary-container: #6bff8f;
+  
+  --color-tertiary: #815100;
+  --color-tertiary-dim: #714600;
+  --color-tertiary-container: #f8a010;
+
+  --color-error: #b41340;
+  --color-error-container: #f74b6d;
+
+  --color-background: #f5f7f9;
+  --color-surface: #f5f7f9;
+  --color-on-background: #2c2f31;
+  --color-on-surface: #2c2f31;
+  --color-on-surface-variant: #595c5e;
+  
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eef1f3;
+  --color-surface-container: #e5e9eb;
+  --color-surface-container-high: #dfe3e6;
+  --color-surface-container-highest: #d9dde0;
+
+  --radius-3xl: 1.5rem;
+  --radius-4xl: 2rem;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-headline: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Manrope", ui-sans-serif, system-ui, sans-serif;
+
+  --color-primary: #4647d3;
+  --color-primary-dim: #3939c7;
+  --color-primary-container: #9396ff;
+  
+  --color-secondary: #006a2d;
+  --color-secondary-dim: #005d26;
+  --color-secondary-container: #6bff8f;
+  
+  --color-tertiary: #815100;
+  --color-tertiary-dim: #714600;
+  --color-tertiary-container: #f8a010;
+
+  --color-error: #b41340;
+  --color-error-container: #f74b6d;
+
+  --color-background: #f5f7f9;
+  --color-surface: #f5f7f9;
+  --color-on-background: #2c2f31;
+  --color-on-surface: #2c2f31;
+  --color-on-surface-variant: #595c5e;
+  
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eef1f3;
+  --color-surface-container: #e5e9eb;
+  --color-surface-container-high: #dfe3e6;
+  --color-surface-container-highest: #d9dde0;
+  
+  --radius-3xl: 1.5rem;
+  --radius-4xl: 2rem;
+}
+
+@layer base {
+  .dark {
+    --color-background: #0b0d14;
+    --color-surface: #0b0d14;
+    --color-on-background: #f1f3f5;
+    --color-on-surface: #f1f3f5;
+    --color-on-surface-variant: #94a3b8;
+    
+    --color-surface-container-lowest: #1a1c25;
+    --color-surface-container-low: #1e2130;
+    --color-surface-container: #262a3d;
+    --color-surface-container-high: #2e334a;
+    --color-surface-container-highest: #373d57;
+
+    --color-primary: #818cf8;
+    --color-primary-container: #4f46e5;
+  }
+
+  body {
+    @apply font-body bg-background text-on-surface transition-colors duration-300;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-headline;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-xl border border-white/20;
+  }
+
+  .premium-gradient {
+    background: linear-gradient(135deg, #4647d3 0%, #9396ff 100%);
+  }
+
+  .theme-transition,
+  .theme-transition *,
+  .theme-transition *::before,
+  .theme-transition *::after {
+    transition: background-color 250ms ease, color 250ms ease, border-color 250ms ease, fill 250ms ease, stroke 250ms ease !important;
+  }
+
+  .nested-scroll {
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
