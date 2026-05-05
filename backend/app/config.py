@@ -21,7 +21,13 @@ class Settings(BaseSettings):
     # ── CORS ──────────────────────────────────────────────────
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # ── Misc / scheduler ──────────────────────────────────────
+    EDULY_TZ: str = "Asia/Tashkent"
+    REDIS_URL: str = ""
+
+    # extra="ignore" so the .env file can include keys consumed by other
+    # processes (cron jobs, scheduler, third-party libs) without crashing.
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 @lru_cache()
