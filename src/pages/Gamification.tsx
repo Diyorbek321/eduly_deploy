@@ -448,10 +448,7 @@ export const Gamification = () => {
                       <p className="text-xs text-slate-500">{formatDate(purchase.created_at)}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <span className="text-xs font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-600">
-                      {purchase.status}
-                    </span>
+                  <div className="flex items-center gap-4">
                     <div className="text-right">
                       <p className="text-sm font-bold text-slate-900">
                         {purchase.reward_name || `#${purchase.reward_id}`}
@@ -461,6 +458,32 @@ export const Gamification = () => {
                         <span className="text-xs font-black">-{purchase.cost} tanga</span>
                       </div>
                     </div>
+                    {isAdmin && purchase.status === 'Kutilmoqda' ? (
+                      <button
+                        onClick={async () => {
+                          try {
+                            await api.put(`/rewards/purchases/${purchase.id}/status`, null, {
+                              params: { new_status: 'Topshirildi' },
+                            });
+                            await refreshPurchases();
+                          } catch { /* interceptor handles */ }
+                        }}
+                        className="px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-500 hover:bg-emerald-600 text-white transition-all whitespace-nowrap"
+                      >
+                        Topshirildi ✓
+                      </button>
+                    ) : (
+                      <span className={cn(
+                        "text-xs font-bold px-2 py-1 rounded-lg whitespace-nowrap",
+                        purchase.status === 'Topshirildi'
+                          ? "bg-emerald-100 text-emerald-700"
+                          : purchase.status === 'Bekor qilingan'
+                          ? "bg-red-100 text-red-600"
+                          : "bg-slate-100 text-slate-600"
+                      )}>
+                        {purchase.status}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
