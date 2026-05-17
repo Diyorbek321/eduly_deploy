@@ -42,6 +42,7 @@ export const Teachers = () => {
     salary: 0,
     bonus: 0,
     hourlyRate: t.hourly_rate ?? 0,
+    salaryPercent: t.salary_percent ?? 40,
     status: t.status ?? 'Faol',
     groupsCount: t.groups_count ?? 0,
     studentsCount: t.students_count ?? 0,
@@ -71,6 +72,7 @@ export const Teachers = () => {
     salary: 0,
     bonus: 0,
     hourlyRate: 0,
+    salaryPercent: 40,
     status: 'Faol',
     avatar: '',
     email: '',
@@ -118,6 +120,7 @@ export const Teachers = () => {
       salary: 0,
       bonus: 0,
       hourlyRate: 0,
+      salaryPercent: 40,
       status: 'Faol',
       avatar: '',
       email: '',
@@ -136,6 +139,7 @@ export const Teachers = () => {
       salary: teacher.salary,
       bonus: teacher.bonus,
       hourlyRate: teacher.hourlyRate,
+      salaryPercent: (teacher as any).salaryPercent ?? 40,
       status: teacher.status,
       avatar: teacher.avatar || '',
       email: teacher.login || '',
@@ -189,6 +193,7 @@ export const Teachers = () => {
         phone: formData.phone,
         specialty: formData.specialty,
         hourly_rate: formData.hourlyRate,
+        salary_percent: formData.salaryPercent,
         status: formData.status,
         avatar: formData.avatar || null,
       };
@@ -458,8 +463,24 @@ export const Teachers = () => {
             </div>
           </div>
           <div className="space-y-1">
+            <label className="text-xs font-black text-slate-400 uppercase">Maosh foizi (%)</label>
+            <div className="relative">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={formData.salaryPercent}
+                onChange={(e) => setFormData(prev => ({ ...prev, salaryPercent: Number(e.target.value) }))}
+                className="w-full px-4 py-3 pr-10 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm"
+                placeholder="40"
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">%</span>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium">O'quvchilar to'lovidan olinadigan ulush</p>
+          </div>
+          <div className="space-y-1">
             <label className="text-xs font-black text-slate-400 uppercase">Status</label>
-            <select 
+            <select
               value={formData.status}
               onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
               className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm cursor-pointer"

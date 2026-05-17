@@ -42,6 +42,9 @@ interface SalaryRow {
   hours: number;
   rate: number;
   teacherId: string;
+  period: number | null;
+  percentUsed: number | null;
+  paymentsTotal: number | null;
 }
 
 interface TeacherOption {
@@ -50,6 +53,18 @@ interface TeacherOption {
   role: string;
   hours: number;
   hourlyRate: number;
+  salaryPercent: number;
+}
+
+interface CalcResult {
+  teacher_name: string;
+  period: number;
+  period_label: string;
+  percent: number;
+  payments_total: number;
+  calculated_amount: number;
+  payments_count: number;
+  already_exists: boolean;
 }
 
 export const Salaries = () => {
@@ -63,16 +78,26 @@ export const Salaries = () => {
   const [salaryToDelete, setSalaryToDelete] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [monthFilter, setMonthFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+
   const [formData, setFormData] = useState({
     teacherId: '',
+    calcType: 'fixed' as 'fixed' | 'percent',
     type: 'Asosiy maosh',
     amount: 0,
     bonus: 0,
+    percent: 40,
+    period: 1 as 1 | 2,
+    paidStudentsTotal: 0,
     method: 'Karta orqali',
     date: new Date().toISOString().split('T')[0],
     status: 'To\'landi',
     comment: ''
   });
+  const [isCalculatingPct, setIsCalculatingPct] = useState(false);
+  const [calcResult, setCalcResult] = useState<CalcResult | null>(null);
 
   const fetchSalaries = async () => {
     try {
@@ -90,6 +115,9 @@ export const Salaries = () => {
         type: 'Asosiy maosh',
         hours: s.total_hours || 0,
         rate: s.total_hours > 0 ? Math.round((s.base_amount || 0) / s.total_hours) : 0,
+        period: s.period ?? null,
+        percentUsed: s.percent_used ?? null,
+        paymentsTotal: s.payments_total ?? null,
         teacherId: String(s.teacher_id),
       }));
       setSalaries(mapped);
@@ -108,6 +136,7 @@ export const Salaries = () => {
         role: 'O\'qituvchi',
         hours: 0,
         hourlyRate: t.hourly_rate || 0,
+        salaryPercent: t.salary_percent ?? 40,
       }));
       setTeachersList(mapped);
       if (mapped.length > 0) {
@@ -133,8 +162,10 @@ export const Salaries = () => {
       setFormData(prev => ({
         ...prev,
         teacherId: id,
+        percent: teacher.salaryPercent,
         amount: teacher.hours * teacher.hourlyRate
       }));
+      setCalcResult(null);
     }
   };
 
@@ -150,6 +181,9 @@ export const Salaries = () => {
       bonus: Number(formData.bonus),
       total_hours: 0,
       total_amount: Number(formData.amount) + Number(formData.bonus),
+      period: formData.calcType === 'percent' ? formData.period : null,
+      percent_used: formData.calcType === 'percent' ? formData.percent : null,
+      payments_total: formData.calcType === 'percent' ? formData.paidStudentsTotal : null,
     };
 
     try {
@@ -175,9 +209,12 @@ export const Salaries = () => {
   const resetForm = () => {
     setFormData({
       teacherId: teachersList[0]?.id || '',
+      calcType: 'fixed',
       type: 'Asosiy maosh',
       amount: 0,
       bonus: 0,
+      percent: Number(localStorage.getItem('eduly_default_salary_percent') || 40),
+      paidStudentsTotal: 0,
       method: 'Karta orqali',
       date: new Date().toISOString().split('T')[0],
       status: 'To\'landi',
@@ -185,13 +222,42 @@ export const Salaries = () => {
     });
   };
 
+  const calculatePercentSalary = async () => {
+    if (!formData.teacherId) return;
+    setIsCalculatingPct(true);
+    setCalcResult(null);
+    try {
+      const month = formData.date.substring(0, 7);
+      const res = await api.post('/salaries/calculate', {
+        teacher_id: Number(formData.teacherId),
+        month,
+        period: formData.period,
+        percent: formData.percent,
+      });
+      const result: CalcResult = res.data;
+      setCalcResult(result);
+      setFormData(prev => ({
+        ...prev,
+        paidStudentsTotal: result.payments_total,
+        amount: result.calculated_amount,
+      }));
+    } catch {
+      // errors handled by interceptor
+    } finally {
+      setIsCalculatingPct(false);
+    }
+  };
+
   const handleEdit = (salary: SalaryRow) => {
     setEditingSalary(salary);
     setFormData({
       teacherId: salary.teacherId || teachersList[0]?.id || '',
+      calcType: 'fixed',
       type: salary.type,
       amount: salary.amount,
       bonus: salary.bonus,
+      percent: Number(localStorage.getItem('eduly_default_salary_percent') || 40),
+      paidStudentsTotal: 0,
       method: salary.method,
       date: salary.date,
       status: salary.status,
@@ -218,8 +284,17 @@ export const Salaries = () => {
     }
   };
 
-  const totalFund = salaries.reduce((acc, s) => acc + s.total, 0);
-  const paidAmount = salaries.filter(s => s.status === 'To\'landi').reduce((acc, s) => acc + s.total, 0);
+  const filteredSalaries = salaries.filter(s => {
+    const matchesSearch = !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesMonth = monthFilter === 'all' || (s.date || '').startsWith(monthFilter);
+    const matchesStatus = statusFilter === 'all' || s.status === statusFilter;
+    return matchesSearch && matchesMonth && matchesStatus;
+  });
+
+  const availableMonths = Array.from(new Set(salaries.map(s => (s.date || '').substring(0, 7)).filter(Boolean))).sort().reverse();
+
+  const totalFund = filteredSalaries.reduce((acc, s) => acc + s.total, 0);
+  const paidAmount = filteredSalaries.filter(s => s.status === 'To\'landi').reduce((acc, s) => acc + s.total, 0);
   const pendingAmount = totalFund - paidAmount;
 
   const currentStats = [
@@ -241,7 +316,7 @@ export const Salaries = () => {
           </div>
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => exportToCSV(salaries, 'ish_haqi_hisoboti')}
+              onClick={() => exportToCSV(filteredSalaries, 'ish_haqi_hisoboti')}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-all font-bold text-slate-600 text-sm"
             >
               <Download size={18} />
@@ -281,21 +356,46 @@ export const Salaries = () => {
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#ec5b13] transition-colors" size={20} />
-            <input 
-              type="text" 
-              placeholder="Xodim ismi bo'yicha qidirish" 
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Xodim ismi bo'yicha qidirish"
               className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 text-sm outline-none transition-all"
             />
           </div>
           <div className="flex items-center gap-3">
-            <select className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-600 outline-none cursor-pointer">
-              <option>Oktyabr, 2023</option>
-              <option>Sentyabr, 2023</option>
+            <select
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-600 outline-none cursor-pointer"
+            >
+              <option value="all">Barcha oylar</option>
+              {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
-            <button className="p-3 bg-slate-50 rounded-xl text-slate-400 hover:bg-slate-100 transition-all">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-600 outline-none cursor-pointer"
+            >
+              <option value="all">Barcha holatlar</option>
+              <option value="To'landi">To'landi</option>
+              <option value="Kutilmoqda">Kutilmoqda</option>
+            </select>
+            <button
+              onClick={() => { setSearchQuery(''); setMonthFilter('all'); setStatusFilter('all'); }}
+              title="Filtrlarni tozalash"
+              className="p-3 bg-slate-50 rounded-xl text-slate-400 hover:bg-slate-100 transition-all"
+            >
               <Filter size={20} />
             </button>
           </div>
+        </div>
+
+        {/* Auto-calc info banner */}
+        <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-bold text-emerald-700">
+          <span className="size-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+          Maoshlar har bir to'lov qabul qilinganda avtomatik hisoblanadi. O'qituvchi profilidagi foiz o'zgartirilsa, keyingi to'lovdan kuchga kiradi.
         </div>
 
         {/* Salaries Table */}
@@ -314,7 +414,7 @@ export const Salaries = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {salaries.map((s) => (
+              {filteredSalaries.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -323,7 +423,13 @@ export const Salaries = () => {
                       </div>
                       <div>
                         <p className="font-bold text-sm text-slate-900">{s.name}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">{s.hours} soat × {s.rate.toLocaleString()}</p>
+                        {s.period ? (
+                          <p className="text-[10px] text-orange-500 font-bold uppercase">
+                            {s.period === 1 ? '1–14' : '15–oxiri'} · {s.percentUsed}%
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">{s.hours} soat</p>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -388,6 +494,31 @@ export const Salaries = () => {
         }
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="md:col-span-2 space-y-2">
+            <label className="text-xs font-black text-slate-400 uppercase">Hisoblash turi</label>
+            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, calcType: 'fixed' }))}
+                className={cn(
+                  "py-2.5 rounded-lg text-sm font-bold transition-all",
+                  formData.calcType === 'fixed' ? "bg-white text-[#ec5b13] shadow-sm" : "text-slate-500"
+                )}
+              >
+                Asosiy maosh
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, calcType: 'percent' }))}
+                className={cn(
+                  "py-2.5 rounded-lg text-sm font-bold transition-all",
+                  formData.calcType === 'percent' ? "bg-white text-[#ec5b13] shadow-sm" : "text-slate-500"
+                )}
+              >
+                O'quvchilardan foiz
+              </button>
+            </div>
+          </div>
           <div className="space-y-1">
             <label className="text-xs font-black text-slate-400 uppercase">Xodimni tanlang</label>
             <div className="relative">
@@ -438,15 +569,101 @@ export const Salaries = () => {
             <label className="text-xs font-black text-slate-400 uppercase">Bonus (UZS)</label>
             <div className="relative">
               <Plus className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={formData.bonus}
                 onChange={(e) => setFormData(prev => ({ ...prev, bonus: Number(e.target.value) }))}
-                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" 
-                placeholder="Masalan: 500,000" 
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm"
+                placeholder="Masalan: 500,000"
               />
             </div>
           </div>
+          {formData.calcType === 'percent' && (
+            <div className="md:col-span-2 p-4 bg-orange-50 border border-orange-100 rounded-xl space-y-4">
+              <label className="text-xs font-black text-orange-700 uppercase">Foiz asosida hisoblash</label>
+
+              {/* Period selector */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">To'lov davri</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setFormData(prev => ({ ...prev, period: 1 })); setCalcResult(null); }}
+                    className={cn(
+                      "flex-1 py-2 rounded-lg text-xs font-black border transition-all",
+                      formData.period === 1
+                        ? "bg-[#ec5b13] text-white border-[#ec5b13]"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-orange-300"
+                    )}
+                  >
+                    1–14 (1-yarmi)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setFormData(prev => ({ ...prev, period: 2 })); setCalcResult(null); }}
+                    className={cn(
+                      "flex-1 py-2 rounded-lg text-xs font-black border transition-all",
+                      formData.period === 2
+                        ? "bg-[#ec5b13] text-white border-[#ec5b13]"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-orange-300"
+                    )}
+                  >
+                    15–oxiri (2-yarmi)
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Foiz (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={formData.percent}
+                    onChange={(e) => { setFormData(prev => ({ ...prev, percent: Number(e.target.value) })); setCalcResult(null); }}
+                    className="w-full px-3 py-2.5 mt-1 bg-white border-none rounded-lg outline-none font-bold text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Jami to'lovlar (UZS)</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={formData.paidStudentsTotal.toLocaleString()}
+                    className="w-full px-3 py-2.5 mt-1 bg-slate-50 border-none rounded-lg outline-none font-bold text-sm text-slate-600"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={calculatePercentSalary}
+                    disabled={isCalculatingPct || !formData.teacherId}
+                    className="w-full py-2.5 bg-[#ec5b13] hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all"
+                  >
+                    {isCalculatingPct ? 'Hisoblanmoqda...' : 'Hisoblash'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Calculation result breakdown */}
+              {calcResult && (
+                <div className={cn(
+                  "p-3 rounded-xl border text-xs font-bold space-y-1",
+                  calcResult.already_exists
+                    ? "bg-yellow-50 border-yellow-200 text-yellow-800"
+                    : "bg-green-50 border-green-200 text-green-800"
+                )}>
+                  {calcResult.already_exists && (
+                    <p className="text-yellow-700 font-black">⚠️ Bu davr uchun oylik allaqachon mavjud</p>
+                  )}
+                  <p>📅 Davr: {calcResult.period_label}</p>
+                  <p>💰 To'lovlar jami: {calcResult.payments_total.toLocaleString()} UZS ({calcResult.payments_count} ta to'lov)</p>
+                  <p>📊 {calcResult.percent}% → <span className="text-base">{calcResult.calculated_amount.toLocaleString()} UZS</span></p>
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-1">
             <label className="text-xs font-black text-slate-400 uppercase">To'lov usuli</label>
             <select 

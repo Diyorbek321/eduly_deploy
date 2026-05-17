@@ -7,7 +7,7 @@ from app.core.permissions import require_admin
 from app.core.tenant import TenantContext, get_tenant
 from app.dependencies import get_db
 from app.schemas.auth import MessageResponse
-from app.schemas.salary import SalaryCreate, SalaryOut, SalaryUpdate
+from app.schemas.salary import SalaryCalculateRequest, SalaryCalculateResult, SalaryCreate, SalaryOut, SalaryUpdate
 from app.services import salary as salary_service
 
 router = APIRouter(dependencies=[Depends(require_admin)])
@@ -33,6 +33,15 @@ def get_salary(
     tenant: TenantContext = Depends(get_tenant),
 ):
     return salary_service.get_by_id(db, salary_id, tenant=tenant)
+
+
+@router.post("/calculate", response_model=SalaryCalculateResult)
+def calculate_salary(
+    data: SalaryCalculateRequest,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_tenant),
+):
+    return salary_service.calculate(db, data, tenant=tenant)
 
 
 @router.post("/", response_model=SalaryOut, status_code=201)

@@ -125,6 +125,8 @@ class StudentOut(BaseModel):
     status: StudentStatus
     debt: float
     paid: float
+    payment_day: int | None = None
+    is_overdue: bool = False
     group_names: list[str] = []
     # Mobile-app login email (if a User account is linked). Read-only — set
     # via StudentCreate/StudentUpdate.email; never carries the password.

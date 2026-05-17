@@ -229,6 +229,7 @@ class Student(Base):
     status = Column(Enum(StudentStatus), nullable=False, default=StudentStatus.FAOL)
     debt = Column(Float, default=0)
     paid = Column(Float, default=0)
+    payment_day = Column(Integer, nullable=True)  # day-of-month when monthly fee is due
     sms_opt_in = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -259,6 +260,7 @@ class Teacher(Base):
     specialty = Column(String(200), nullable=True)
     status = Column(Enum(TeacherStatus), nullable=False, default=TeacherStatus.FAOL)
     hourly_rate = Column(Float, default=0)
+    salary_percent = Column(Float, default=40)
     avatar = Column(String(500), nullable=True)
     experience = Column(String(100), nullable=True)
     birth_date = Column(Date, nullable=True)
@@ -440,6 +442,9 @@ class Salary(Base):
     bonus = Column(Float, default=0)
     total_hours = Column(Float, default=0)
     total_amount = Column(Float, nullable=False)
+    period = Column(Integer, nullable=True)        # 1 = days 1-14, 2 = days 15-end
+    percent_used = Column(Float, nullable=True)    # snapshot of salary_percent at calc time
+    payments_total = Column(Float, nullable=True)  # total student payments used in calc
     is_paid = Column(Boolean, default=False)
     paid_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

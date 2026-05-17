@@ -253,6 +253,195 @@ def run_debt_sms_job(db: Session, *, on_date: date | None = None) -> int:
     return sent
 
 
+# ── Payment Reminders (daily 09:00) ─────────────────────────────────────────
+
+_PAYMENT_REMINDER_BEFORE = (
+    "Assalomu alaykum, {name}! Kurs to'lovi {day}-{month} kuni muddati "
+    "yaqinlashmoqda. Iltimos, to'lovni o'z vaqtida amalga oshiring. Rahmat!"
+)
+
+_PAYMENT_REMINDER_TODAY = (
+    "Assalomu alaykum, {name}! Bugun ({day}-{month}) kurs to'lovi kuni. "
+    "Iltimos, to'lovni amalga oshiring. Savollar uchun markazimizga murojaat qiling."
+)
+
+_PAYMENT_REMINDER_OVERDUE = (
+    "Assalomu alaykum, {name}! Kurs to'lovi muddati {day}-{month} kuni o'tdi. "
+    "Iltimos, imkon qadar tezroq to'lovni amalga oshiring yoki markazimiz bilan bog'laning."
+)
+
+# Parent versions — say "Farzandingiz {student}" instead of "siz"
+_PAYMENT_REMINDER_BEFORE_PARENT = (
+    "Assalomu alaykum! Farzandingiz {student}ning kurs to'lovi {day}-{month} kuni "
+    "muddati yaqinlashmoqda. Iltimos, to'lovni o'z vaqtida amalga oshiring. Rahmat!"
+)
+
+_PAYMENT_REMINDER_TODAY_PARENT = (
+    "Assalomu alaykum! Bugun ({day}-{month}) farzandingiz {student}ning kurs to'lovi "
+    "kuni. Iltimos, to'lovni amalga oshiring."
+)
+
+_PAYMENT_REMINDER_OVERDUE_PARENT = (
+    "Assalomu alaykum! Farzandingiz {student}ning kurs to'lovi muddati {day}-{month} "
+    "kuni o'tdi. Iltimos, imkon qadar tezroq to'lovni amalga oshiring yoki "
+    "markazimiz bilan bog'laning."
+)
+
+
+def _payment_reminder_sent_today(db: Session, *, phone: str, on_date: date) -> bool:
+    """True if a QARZDORLIK SMS was already sent to this phone today."""
+    start = datetime.combine(on_date, time.min)
+    end = datetime.combine(on_date, time.max)
+    return (
+        db.query(SMSMessage.id)
+        .filter(
+            SMSMessage.recipient_phone == phone,
+            SMSMessage.category == SMSCategory.QARZDORLIK,
+            SMSMessage.status != SMSStatus.FAILED,
+            SMSMessage.created_at.between(start, end),
+        )
+        .first()
+        is not None
+    )
+
+
+def _paid_this_month(db: Session, *, student_id: int, on_date: date) -> bool:
+    """True if student has a successful payment in the current calendar month."""
+    from app.models.models import Payment, PaymentStatus
+    month_start = datetime(on_date.year, on_date.month, 1)
+    return (
+        db.query(Payment.id)
+        .filter(
+            Payment.student_id == student_id,
+            Payment.status == PaymentStatus.MUVAFFAQIYATLI,
+            Payment.date >= month_start,
+        )
+        .first()
+        is not None
+    )
+
+
+def _send_payment_reminder(
+    db: Session,
+    *,
+    student: Student,
+    phone: str,
+    message: str,
+    on_date: date,
+) -> None:
+    if _payment_reminder_sent_today(db, phone=phone, on_date=on_date):
+        return
+    sms_service.send_single(
+        db,
+        SMSSendRequest(
+            recipient_name=student.parent_name or student.name,
+            phone=phone,
+            message=message,
+            category=SMSCategory.QARZDORLIK,
+        ),
+    )
+    _audit_send(
+        db, student=student, phone=phone,
+        category=SMSCategory.QARZDORLIK, job="payment_reminder_cron",
+    )
+
+
+def run_payment_reminder_job(db: Session, *, on_date: date | None = None) -> int:
+    """Send payment reminders for students based on their individual payment_day.
+
+    Triggers:
+    - 3 days before payment_day  → soft reminder
+    - on payment_day             → due-date reminder
+    - 3 days after payment_day   → overdue notice
+
+    Sends to BOTH student phone AND parent phone (separately, de-duped per day).
+    Skips students who have already paid this month.
+    Skips frozen students and those with sms_opt_in=False.
+    """
+    today = on_date or date.today()
+    month_label = f"{today.month:02d}"
+
+    students = (
+        db.query(Student)
+        .filter(
+            Student.status == StudentStatus.FAOL,
+            Student.sms_opt_in.is_(True),
+            Student.payment_day.isnot(None),
+        )
+        .all()
+    )
+
+    sent = 0
+    for student in students:
+        day = student.payment_day
+        if not day:
+            continue
+
+        # which trigger fires today?
+        if today.day == day - 3:
+            trigger = "before"
+            student_msg = _PAYMENT_REMINDER_BEFORE.format(
+                name=student.name, day=day, month=month_label
+            )
+            parent_msg = _PAYMENT_REMINDER_BEFORE_PARENT.format(
+                student=student.name, day=day, month=month_label
+            )
+        elif today.day == day:
+            trigger = "today"
+            student_msg = _PAYMENT_REMINDER_TODAY.format(
+                name=student.name, day=day, month=month_label
+            )
+            parent_msg = _PAYMENT_REMINDER_TODAY_PARENT.format(
+                student=student.name, day=day, month=month_label
+            )
+        elif today.day == day + 3:
+            trigger = "overdue"
+            student_msg = _PAYMENT_REMINDER_OVERDUE.format(
+                name=student.name, day=day, month=month_label
+            )
+            parent_msg = _PAYMENT_REMINDER_OVERDUE_PARENT.format(
+                student=student.name, day=day, month=month_label
+            )
+        else:
+            continue
+
+        # skip if already paid this month (before and today triggers)
+        if trigger != "overdue" and _paid_this_month(db, student_id=student.id, on_date=today):
+            continue
+        # overdue: also skip if paid (they might have paid between day and day+3)
+        if trigger == "overdue" and _paid_this_month(db, student_id=student.id, on_date=today):
+            continue
+
+        try:
+            # send to student
+            if student.phone:
+                _send_payment_reminder(
+                    db, student=student, phone=student.phone,
+                    message=student_msg, on_date=today,
+                )
+                sent += 1
+
+            # send to parent (if different number)
+            if student.parent_phone and student.parent_phone != student.phone:
+                _send_payment_reminder(
+                    db, student=student, phone=student.parent_phone,
+                    message=parent_msg, on_date=today,
+                )
+                sent += 1
+
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "payment-reminder-cron failed (student=%s trigger=%s)",
+                student.id, trigger,
+            )
+
+    logger.info(
+        "payment-reminder-cron: dispatched %s SMS for %s (trigger day=%s)",
+        sent, today, today.day,
+    )
+    return sent
+
+
 # ── Job entry points (no-arg, manage their own session) ────────────────────
 
 
@@ -272,8 +461,16 @@ def _debt_job_entry() -> None:
         db.close()
 
 
+def _payment_reminder_job_entry() -> None:
+    db = SessionLocal()
+    try:
+        run_payment_reminder_job(db)
+    finally:
+        db.close()
+
+
 def register_jobs(scheduler) -> None:
-    """Register both cron jobs on the given APScheduler instance."""
+    """Register all SMS cron jobs on the given APScheduler instance."""
     from apscheduler.triggers.cron import CronTrigger
 
     scheduler.add_job(
@@ -293,4 +490,16 @@ def register_jobs(scheduler) -> None:
         max_instances=1,
         coalesce=True,
     )
-    logger.info("SMS cron jobs registered: absent_daily=20:00, debt_monthly=30/31 10:00")
+    # Payment reminders: daily at 09:00 — checks each student's individual payment_day.
+    scheduler.add_job(
+        _payment_reminder_job_entry,
+        CronTrigger(hour=9, minute=0),
+        id="sms_payment_reminder_daily",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    logger.info(
+        "SMS cron jobs registered: absent_daily=20:00, "
+        "debt_monthly=30/31 10:00, payment_reminder_daily=09:00"
+    )

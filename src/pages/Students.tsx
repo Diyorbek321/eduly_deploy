@@ -39,6 +39,8 @@ const mapStudent = (s: Record<string, unknown>): Student => ({
   status: (s.status as Student['status']) ?? 'Faol',
   debt: (s.debt as number) ?? 0,
   paid: (s.paid as number) ?? 0,
+  isOverdue: (s.is_overdue as boolean) ?? false,
+  paymentDay: (s.payment_day as number) ?? undefined,
   attendance: 0,
   birthDate: (s.birth_date as string) || '',
   gender: (s.gender as Student['gender']) ?? 'Erkak',
@@ -455,11 +457,16 @@ export const Students = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <span className={cn("text-sm font-black", s.debt > 0 ? "text-red-500" : "text-slate-900")}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={cn("text-sm font-black", s.debt > 0 || s.isOverdue ? "text-red-500" : "text-slate-900")}>
                               {s.debt.toLocaleString()} UZS
                             </span>
                             {renderDebtBadge(s.debt, s.paid)}
+                            {s.isOverdue && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-600 border border-red-200">
+                                Qarzdor
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4">

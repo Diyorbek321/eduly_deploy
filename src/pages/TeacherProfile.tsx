@@ -31,6 +31,27 @@ interface TeacherGroup {
   students_count: number;
   schedule: string;
   time: string;
+  room?: string;
+}
+
+const DAY_NAMES_FULL = ['Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
+
+function parseScheduleDays(schedule: string): number[] {
+  const s = (schedule || '').toLowerCase();
+  if (s.includes('har kuni')) return [0, 1, 2, 3, 4, 5];
+  if (s.includes('toq') || (s.includes('dush') && s.includes('chor') && s.includes('jum'))) return [0, 2, 4];
+  if (s.includes('juft') || (s.includes('sesh') && s.includes('pay') && s.includes('shan'))) return [1, 3, 5];
+  const dayMap: Record<string, number> = { dush: 0, sesh: 1, chor: 2, pay: 3, jum: 4, shan: 5 };
+  const days: number[] = [];
+  for (const [key, val] of Object.entries(dayMap)) {
+    if (s.includes(key)) days.push(val);
+  }
+  return days.sort((a, b) => a - b);
+}
+
+function parseStartTime(time: string): string {
+  const match = (time || '').match(/(\d{1,2}:\d{2})/);
+  return match ? match[1] : '';
 }
 
 interface SalaryInfo {
@@ -39,6 +60,8 @@ interface SalaryInfo {
   base_amount: number;
   bonus: number;
   total_amount: number;
+  percent_used: number | null;
+  payments_total: number | null;
   is_paid: boolean;
   paid_at: string | null;
 }
@@ -76,6 +99,7 @@ export const TeacherProfile = () => {
           salary: 0,
           bonus: 0,
           hourlyRate: t.hourly_rate ?? 0,
+          salaryPercent: t.salary_percent ?? 40,
           status: t.status ?? 'Faol',
           groupsCount: t.groups_count ?? 0,
           studentsCount: t.students_count ?? 0,
@@ -101,37 +125,52 @@ export const TeacherProfile = () => {
 
   const renderTabContent = () => {
     switch (activeTab) {
-      case 'Dars jadvali':
+      case 'Dars jadvali': {
+        const slots = teacherGroups.flatMap((g) => {
+          const days = parseScheduleDays(g.schedule);
+          const startTime = parseStartTime(g.time);
+          return days.map((d) => ({
+            day: d,
+            time: startTime,
+            rawTime: g.time,
+            group: g.name,
+            room: g.room || '',
+          }));
+        }).sort((a, b) => (a.day - b.day) || a.time.localeCompare(b.time));
+
         return (
           <div className="space-y-6">
             <h3 className="text-lg font-black text-slate-900">Haftalik dars jadvali</h3>
-            <div className="space-y-3">
-              {[
-                { day: 'Dushanba', time: '14:00 - 15:30', group: 'English IELTS #12', room: '304-Xona' },
-                { day: 'Seshanba', time: '10:00 - 11:30', group: 'Foundation #4', room: '201-Xona' },
-                { day: 'Chorshanba', time: '14:00 - 15:30', group: 'English IELTS #12', room: '304-Xona' },
-                { day: 'Payshanba', time: '10:00 - 11:30', group: 'Foundation #4', room: '201-Xona' },
-                { day: 'Juma', time: '14:00 - 15:30', group: 'English IELTS #12', room: '304-Xona' },
-                { day: 'Shanba', time: '10:00 - 11:30', group: 'Foundation #4', room: '201-Xona' },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center justify-between p-4 rounded-2xl border border-slate-100 bg-slate-50/50">
-                  <div className="flex items-center gap-4">
-                    <div className="size-10 rounded-xl bg-white flex items-center justify-center text-[#ec5b13] shadow-sm">
-                      <Clock size={20} />
+            {slots.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <Calendar size={40} className="mx-auto mb-3 opacity-50" />
+                <p className="text-sm font-bold">Bu o'qituvchi uchun jadval topilmadi</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {slots.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between p-4 rounded-2xl border border-slate-100 bg-slate-50/50">
+                    <div className="flex items-center gap-4">
+                      <div className="size-10 rounded-xl bg-white flex items-center justify-center text-[#ec5b13] shadow-sm">
+                        <Clock size={20} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">{DAY_NAMES_FULL[item.day]}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">
+                          {item.rawTime || item.time}{item.room ? ` • ${item.room}` : ''}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900">{item.day}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">{item.time} • {item.room}</p>
-                    </div>
+                    <span className="text-xs font-black text-slate-600 bg-white px-3 py-1 rounded-lg border border-slate-100">
+                      {item.group}
+                    </span>
                   </div>
-                  <span className="text-xs font-black text-slate-600 bg-white px-3 py-1 rounded-lg border border-slate-100">
-                    {item.group}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         );
+      }
       case 'To\'lovlar':
         return (
           <div className="space-y-6">
@@ -333,33 +372,89 @@ export const TeacherProfile = () => {
             </div>
 
             {/* Salary Info */}
-            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">Maosh ma'lumotlari</h3>
-                <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl">
-                  <DollarSign size={18} />
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">Maosh</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                    {(teacher as any).salaryPercent ?? 40}% foiz
+                  </span>
+                  <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl">
+                    <DollarSign size={18} />
+                  </div>
                 </div>
               </div>
-              <div className="space-y-4">
-                {salaries.length > 0 ? (
-                  <>
-                    <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase">Asosiy maosh ({salaries[0].month})</p>
-                      <p className="text-xl font-black text-slate-900">{salaries[0].base_amount.toLocaleString()} <span className="text-xs font-normal text-slate-400">UZS</span></p>
+
+              {/* Current month — live */}
+              {(() => {
+                const currentMonth = new Date().toISOString().substring(0, 7);
+                const current = salaries.find(s => s.month === currentMonth);
+                return (
+                  <div className={cn(
+                    "p-4 rounded-2xl border",
+                    current?.is_paid
+                      ? "bg-slate-50 border-slate-200"
+                      : "bg-emerald-50 border-emerald-200"
+                  )}>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                        Bu oy ({currentMonth})
+                      </p>
+                      {current?.is_paid ? (
+                        <span className="text-[10px] font-black text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">To'landi ✓</span>
+                      ) : (
+                        <span className="text-[10px] font-black text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">Kutilmoqda</span>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase">Bonus</p>
-                      <p className="text-lg font-black text-emerald-600">+{salaries[0].bonus.toLocaleString()} <span className="text-xs font-normal text-slate-400">UZS</span></p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase">Jami</p>
-                      <p className="text-lg font-black text-slate-900">{salaries[0].total_amount.toLocaleString()} <span className="text-xs font-normal text-slate-400">UZS</span></p>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-slate-500">Maosh ma'lumotlari kiritilmagan</p>
-                )}
-              </div>
+                    {current ? (
+                      <>
+                        <p className="text-2xl font-black text-slate-900">
+                          {current.total_amount.toLocaleString()}
+                          <span className="text-sm font-normal text-slate-400 ml-1">UZS</span>
+                        </p>
+                        {current.payments_total != null && (
+                          <p className="text-xs text-slate-500 mt-1 font-medium">
+                            {current.payments_total.toLocaleString()} UZS × {current.percent_used ?? 40}% = {current.base_amount.toLocaleString()} UZS
+                            {current.bonus > 0 && ` + ${current.bonus.toLocaleString()} UZS bonus`}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-slate-400 font-medium">Bu oy hali to'lov qilinmagan</p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Last 6 months history */}
+              {salaries.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-3">Oxirgi oylar</p>
+                  <div className="space-y-2">
+                    {salaries.slice(0, 6).map(s => (
+                      <div key={s.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                        <div>
+                          <p className="text-xs font-black text-slate-700">{s.month}</p>
+                          {s.payments_total != null && (
+                            <p className="text-[10px] text-slate-400 font-medium">
+                              {s.payments_total.toLocaleString()} × {s.percent_used ?? 40}%
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-black text-slate-900">{s.total_amount.toLocaleString()} UZS</p>
+                          <span className={cn(
+                            "text-[10px] font-black px-2 py-0.5 rounded-full",
+                            s.is_paid ? "bg-emerald-100 text-emerald-600" : "bg-orange-100 text-orange-600"
+                          )}>
+                            {s.is_paid ? "To'landi" : "Kutilmoqda"}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Login Credentials */}
@@ -472,12 +567,18 @@ export const TeacherProfile = () => {
             <input type="text" defaultValue={teacher.specialty} className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-black text-slate-400 uppercase">Oylik maoshi</label>
-            <input type="text" defaultValue={teacher.salary} className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-black text-slate-400 uppercase">Oylik bonus (UZS)</label>
-            <input type="number" defaultValue={teacher.bonus} className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" />
+            <label className="text-xs font-black text-slate-400 uppercase">Maosh foizi (%)</label>
+            <div className="relative">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                defaultValue={(teacher as any).salaryPercent ?? 40}
+                className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm"
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">%</span>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium">O'quvchilar to'lovidan o'qituvchiga berilgan ulush</p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-black text-slate-400 uppercase">Tug'ilgan sanasi</label>

@@ -6,6 +6,8 @@ export interface Student {
   status: 'Faol' | 'Kutishda' | 'Muzlatilgan' | 'Ketgan';
   debt: number;
   paid: number;
+  isOverdue?: boolean;
+  paymentDay?: number;
   attendance: number;
   birthDate: string;
   gender: 'Erkak' | 'Ayol';

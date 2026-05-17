@@ -81,8 +81,18 @@ def create(
     if payment.status == PaymentStatus.MUVAFFAQIYATLI:
         student.paid = (student.paid or 0) + payment.amount
         student.debt = max(0, (student.debt or 0) - payment.amount)
+        # set payment_day from first successful payment
+        if not student.payment_day:
+            student.payment_day = payment.date.day
     db.commit()
     db.refresh(payment)
+
+    # auto-recalculate teacher salaries for the payment's month
+    if payment.status == PaymentStatus.MUVAFFAQIYATLI:
+        from app.services.salary import recalculate_for_student_teachers
+        month = payment.date.strftime('%Y-%m')
+        recalculate_for_student_teachers(db, data.student_id, month)
+
     return _enrich(payment)
 
 

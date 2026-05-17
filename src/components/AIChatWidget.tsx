@@ -54,6 +54,27 @@ const getCoursesFunction: FunctionDeclaration = {
   },
 };
 
+const getAttendanceFunction: FunctionDeclaration = {
+  name: 'getAttendanceData',
+  description: 'Get attendance records. Can filter by group_id or student_id to see who attended and who was absent.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      group_id: { type: Type.NUMBER, description: 'Filter by group ID (optional)' },
+      student_id: { type: Type.NUMBER, description: 'Filter by student ID (optional)' },
+    },
+  },
+};
+
+const getOverdueStudentsFunction: FunctionDeclaration = {
+  name: 'getOverdueStudents',
+  description: 'Get a list of students who have not paid their monthly fee (qarzdor talabalar).',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {},
+  },
+};
+
 interface Message {
   id: string;
   role: 'user' | 'model';
@@ -98,7 +119,9 @@ Markdown formatidan foydalanib, ma'lumotlarni chiroyli ko'rinishda taqdim eting 
               getStudentsFunction,
               getGroupsFunction,
               getTeachersFunction,
-              getCoursesFunction
+              getCoursesFunction,
+              getAttendanceFunction,
+              getOverdueStudentsFunction,
             ]
           }],
           temperature: 0.7,
@@ -111,11 +134,14 @@ Markdown formatidan foydalanib, ma'lumotlarni chiroyli ko'rinishda taqdim eting 
 
   const handleFunctionCall = async (functionCall: any) => {
     try {
+      const fnArgs = functionCall.args as Record<string, unknown> | undefined;
       const endpointByName: Record<string, { url: string; params?: Record<string, unknown> }> = {
-        getStudentsData: { url: '/students', params: { limit: 500 } },
-        getGroupsData: { url: '/groups', params: { limit: 500 } },
-        getTeachersData: { url: '/teachers', params: { limit: 500 } },
-        getCoursesData: { url: '/courses', params: { limit: 500 } },
+        getStudentsData: { url: '/students', params: { limit: 100 } },
+        getGroupsData: { url: '/groups', params: { limit: 100 } },
+        getTeachersData: { url: '/teachers', params: { limit: 100 } },
+        getCoursesData: { url: '/courses', params: { limit: 100 } },
+        getAttendanceData: { url: '/attendances', params: { limit: 100, ...(fnArgs?.group_id ? { group_id: fnArgs.group_id } : {}), ...(fnArgs?.student_id ? { student_id: fnArgs.student_id } : {}) } },
+        getOverdueStudents: { url: '/students', params: { limit: 100, debt_status: 'unpaid' } },
       };
       const endpoint = endpointByName[functionCall.name];
       if (!endpoint) {

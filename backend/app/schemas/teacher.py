@@ -12,6 +12,7 @@ class TeacherCreate(BaseModel):
     phone: str
     specialty: str | None = None
     hourly_rate: float = 0
+    salary_percent: float = 40
     experience: str | None = None
     birth_date: date | None = None
     bio: str | None = None
@@ -26,6 +27,7 @@ class TeacherUpdate(BaseModel):
     phone: str | None = None
     specialty: str | None = None
     hourly_rate: float | None = None
+    salary_percent: float | None = None
     experience: str | None = None
     birth_date: date | None = None
     bio: str | None = None
@@ -42,6 +44,7 @@ class TeacherOut(BaseModel):
     specialty: str | None = None
     status: TeacherStatus
     hourly_rate: float
+    salary_percent: float = 40
     avatar: str | None = None
     experience: str | None = None
     birth_date: date | None = None

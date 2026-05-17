@@ -1,23 +1,45 @@
 """Student service — CRUD, pagination, filtering, multi-tenant scoped."""
 
 import math
+from datetime import datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.scoping import teacher_group_ids
 from app.core.tenant import TenantContext
-from app.models.models import Student, StudentGroup, StudentStatus, User, UserRole
+from app.models.models import Payment, PaymentStatus, Student, StudentGroup, StudentStatus, User, UserRole
 from app.schemas.student import StudentCreate, StudentUpdate
 
 
-def _enrich(student: Student) -> Student:
+def _is_overdue(student: Student, db: Session) -> bool:
+    """Return True if the student has missed their monthly payment this month."""
+    if not student.payment_day:
+        return False
+    today = datetime.utcnow()
+    if today.day < student.payment_day:
+        return False
+    # check if any successful payment exists in the current month
+    paid_this_month = (
+        db.query(Payment)
+        .filter(
+            Payment.student_id == student.id,
+            Payment.status == PaymentStatus.MUVAFFAQIYATLI,
+            Payment.date >= today.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
+        )
+        .first()
+    )
+    return paid_this_month is None
+
+
+def _enrich(student: Student, db: Session | None = None) -> Student:
     """Attach computed group_names + login fields."""
     student.group_names = [
         sg.group.name for sg in (student.enrollments or []) if sg.group
     ]
     student.login_email = student.user.email if student.user else None
     student.has_login = student.user_id is not None
+    student.is_overdue = _is_overdue(student, db) if db else False
     return student
 
 
@@ -74,7 +96,7 @@ def get_all(
     total = q.count()
     items = q.order_by(Student.id.desc()).offset((page - 1) * limit).limit(limit).all()
     return {
-        "items": [_enrich(s) for s in items],
+        "items": [_enrich(s, db) for s in items],
         "total": total,
         "page": page,
         "pages": math.ceil(total / limit) if limit else 1,
@@ -103,7 +125,7 @@ def get_by_id(
         )
         if not enrolled:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Bu talaba sizga tegishli emas")
-    return _enrich(student)
+    return _enrich(student, db)
 
 
 def create(
@@ -149,7 +171,7 @@ def create(
     db.add(student)
     db.commit()
     db.refresh(student)
-    return _enrich(student)
+    return _enrich(student, db)
 
 
 def update(
@@ -220,7 +242,7 @@ def update(
 
     db.commit()
     db.refresh(student)
-    return _enrich(student)
+    return _enrich(student, db)
 
 
 def delete(
