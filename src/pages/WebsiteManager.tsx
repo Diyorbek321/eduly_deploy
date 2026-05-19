@@ -16,6 +16,15 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+interface AdminCourse {
+  id: number;
+  name: string;
+  description?: string;
+  duration?: string;
+  price?: string;
+  status: string;
+}
+
 interface WebsiteCourse {
   id: number;
   center_id: number | null;
@@ -87,19 +96,26 @@ const inputCls = "w-full border border-slate-200 rounded-xl px-3 py-2 text-sm fo
 // ── Courses Tab ────────────────────────────────────────────────────────────────
 
 function CoursesTab() {
-  const [courses, setCourses] = useState<WebsiteCourse[]>([]);
+  const [adminCourses, setAdminCourses] = useState<AdminCourse[]>([]);
+  const [overlays, setOverlays] = useState<WebsiteCourse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState<null | 'create' | WebsiteCourse>(null);
+  const [modal, setModal] = useState<null | AdminCourse>(null);
   const [saving, setSaving] = useState(false);
 
-  const emptyForm = { name: '', description: '', duration: '', price: '', icon: '', color: '#6366f1', position: 0 };
+  const emptyForm = { description: '', duration: '', price: '', icon: '', color: '#6366f1' };
   const [form, setForm] = useState(emptyForm);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/website/courses');
-      setCourses(res.data?.data ?? res.data);
+      const [cRes, oRes] = await Promise.all([
+        axios.get('/api/courses'),
+        axios.get('/api/website/courses'),
+      ]);
+      const cl = cRes.data?.data ?? cRes.data;
+      const ol = oRes.data?.data ?? oRes.data;
+      setAdminCourses(Array.isArray(cl) ? cl : []);
+      setOverlays(Array.isArray(ol) ? ol : []);
     } finally {
       setLoading(false);
     }
@@ -107,41 +123,41 @@ function CoursesTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  function openCreate() {
-    setForm(emptyForm);
-    setModal('create');
+  function getOverlay(course: AdminCourse): WebsiteCourse | undefined {
+    return overlays.find(o => o.name.toLowerCase() === course.name.toLowerCase());
   }
 
-  function openEdit(c: WebsiteCourse) {
+  function openCustomize(c: AdminCourse) {
+    const overlay = getOverlay(c);
     setForm({
-      name: c.name,
-      description: c.description ?? '',
-      duration: c.duration ?? '',
-      price: c.price ?? '',
-      icon: c.icon ?? '',
-      color: c.color,
-      position: c.position,
+      description: overlay?.description ?? c.description ?? '',
+      duration: overlay?.duration ?? c.duration ?? '',
+      price: overlay?.price ?? (c.price ? `${Number(c.price).toLocaleString()} UZS/oy` : ''),
+      icon: overlay?.icon ?? '',
+      color: overlay?.color ?? '#6366f1',
     });
     setModal(c);
   }
 
   async function save() {
-    if (!form.name.trim()) return;
+    if (!modal) return;
     setSaving(true);
     try {
       const payload = {
-        name: form.name,
+        name: modal.name,
         description: form.description || null,
         duration: form.duration || null,
         price: form.price || null,
         icon: form.icon || null,
         color: form.color,
-        position: form.position,
+        position: adminCourses.indexOf(modal),
+        is_active: true,
       };
-      if (modal === 'create') {
+      const overlay = getOverlay(modal);
+      if (overlay) {
+        await axios.patch(`/api/website/courses/${overlay.id}`, payload);
+      } else {
         await axios.post('/api/website/courses', payload);
-      } else if (modal && typeof modal === 'object') {
-        await axios.patch(`/api/website/courses/${modal.id}`, payload);
       }
       setModal(null);
       await load();
@@ -150,113 +166,99 @@ function CoursesTab() {
     }
   }
 
-  async function toggleActive(c: WebsiteCourse) {
-    await axios.patch(`/api/website/courses/${c.id}`, { is_active: !c.is_active });
-    await load();
-  }
-
-  async function del(c: WebsiteCourse) {
-    if (!confirm(`"${c.name}" kursini o'chirasizmi?`)) return;
-    await axios.delete(`/api/website/courses/${c.id}`);
+  async function removeOverlay(c: AdminCourse) {
+    const overlay = getOverlay(c);
+    if (!overlay) return;
+    if (!confirm(`"${c.name}" kursining veb-sayt sozlamalarini o'chirasizmi?`)) return;
+    await axios.delete(`/api/website/courses/${overlay.id}`);
     await load();
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-slate-500">{courses.length} ta kurs</p>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 bg-[#ec5b13] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors"
-        >
-          <Plus size={16} /> Qo'shish
-        </button>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm text-slate-500">{adminCourses.length} ta kurs (admin panelidan avtomatik)</p>
+      </div>
+      <div className="mb-4 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+        💡 Kurslar admin panelining <strong>Kurslar</strong> bo'limidan avtomatik olinadi.
+        Har bir kurs uchun veb-saytda ko'rsatiladigan <strong>emoji, rang va tavsif</strong>ni sozlashingiz mumkin.
       </div>
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="animate-spin text-slate-300" size={32} /></div>
-      ) : courses.length === 0 ? (
+      ) : adminCourses.length === 0 ? (
         <div className="text-center py-12 text-slate-400">
           <BookOpen size={40} className="mx-auto mb-2 opacity-40" />
-          <p>Kurslar yo'q. Birinchisini qo'shing.</p>
+          <p>Kurslar yo'q. Admin panelidan kurs qo'shing.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {courses.map((c) => (
-            <div key={c.id} className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm">
-              <div className="flex items-start gap-3 mb-3">
-                <div
-                  className="size-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ backgroundColor: c.color + '20' }}
-                >
-                  {c.icon || '📚'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900 truncate">{c.name}</p>
-                  {c.description && <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">{c.description}</p>}
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs mb-3">
-                {c.duration && (
-                  <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-lg">{c.duration}</span>
-                )}
-                {c.price && (
-                  <span className="bg-orange-50 text-orange-600 px-2 py-0.5 rounded-lg font-medium">{c.price}</span>
-                )}
-                <span className="bg-slate-50 text-slate-500 px-2 py-0.5 rounded-lg">Tartib: {c.position}</span>
-                <span
-                  className="inline-block size-5 rounded-md border border-slate-200 flex-shrink-0"
-                  style={{ backgroundColor: c.color }}
-                  title={c.color}
-                />
-              </div>
-              <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
-                <button
-                  onClick={() => toggleActive(c)}
-                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors ${
-                    c.is_active ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'
-                  }`}
-                >
-                  {c.is_active ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                  {c.is_active ? 'Faol' : 'Nofaol'}
-                </button>
-                <div className="ml-auto flex gap-2">
-                  <button
-                    onClick={() => openEdit(c)}
-                    className="p-1.5 text-slate-400 hover:text-[#ec5b13] hover:bg-orange-50 rounded-lg transition-colors"
+          {adminCourses.map((c) => {
+            const overlay = getOverlay(c);
+            return (
+              <div key={c.id} className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm">
+                <div className="flex items-start gap-3 mb-3">
+                  <div
+                    className="size-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                    style={{ backgroundColor: (overlay?.color ?? '#6366f1') + '20' }}
                   >
-                    <Pencil size={15} />
-                  </button>
+                    {overlay?.icon || '📚'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900 truncate">{c.name}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{overlay ? '✅ Sozlangan' : '⚙️ Sozlanmagan (standart)'}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs mb-3">
+                  {(overlay?.duration ?? c.duration) && (
+                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-lg">{overlay?.duration ?? c.duration}</span>
+                  )}
+                  {(overlay?.price ?? c.price) && (
+                    <span className="bg-orange-50 text-orange-600 px-2 py-0.5 rounded-lg font-medium">{overlay?.price ?? c.price}</span>
+                  )}
+                  {overlay?.color && (
+                    <span className="inline-block size-5 rounded-md border border-slate-200 flex-shrink-0" style={{ backgroundColor: overlay.color }} />
+                  )}
+                </div>
+                <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
                   <button
-                    onClick={() => del(c)}
-                    className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                    onClick={() => openCustomize(c)}
+                    className="flex items-center gap-1 text-xs px-3 py-1.5 bg-orange-50 text-[#ec5b13] rounded-lg hover:bg-orange-100 transition-colors font-medium"
                   >
-                    <Trash2 size={15} />
+                    <Pencil size={13} /> Sozlash
                   </button>
+                  {overlay && (
+                    <button
+                      onClick={() => removeOverlay(c)}
+                      className="flex items-center gap-1 text-xs px-2 py-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                    >
+                      <Trash2 size={13} /> Tozalash
+                    </button>
+                  )}
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {modal !== null && (
         <Modal
-          title={modal === 'create' ? "Yangi kurs qo'shish" : "Kursni tahrirlash"}
+          title={`"${modal.name}" — veb-sayt ko'rinishini sozlash`}
           onClose={() => setModal(null)}
         >
           <div className="space-y-4">
-            <Field label="Nomi *">
-              <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ingliz tili" />
-            </Field>
-            <Field label="Tavsif">
+            <div className="bg-slate-50 rounded-xl px-4 py-2.5 text-sm text-slate-500">
+              Kurs nomi admin panelidan olinadi: <strong className="text-slate-800">{modal.name}</strong>
+            </div>
+            <Field label="Tavsif (veb-sayt uchun)">
               <textarea className={inputCls} rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Kurs haqida qisqacha..." />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Davomiyligi">
                 <input className={inputCls} value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="6 oy" />
               </Field>
-              <Field label="Narxi">
+              <Field label="Narxi (ko'rsatish uchun)">
                 <input className={inputCls} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="800,000 UZS/oy" />
               </Field>
             </div>
@@ -276,16 +278,13 @@ function CoursesTab() {
                 </div>
               </Field>
             </div>
-            <Field label="Tartib raqami">
-              <input type="number" className={inputCls} value={form.position} onChange={(e) => setForm({ ...form, position: Number(e.target.value) })} />
-            </Field>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setModal(null)} className="flex-1 border border-slate-200 text-slate-600 px-4 py-2 rounded-xl text-sm hover:bg-slate-50 transition-colors">
                 Bekor qilish
               </button>
               <button
                 onClick={save}
-                disabled={saving || !form.name.trim()}
+                disabled={saving}
                 className="flex-1 bg-[#ec5b13] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
               >
                 {saving && <Loader2 size={14} className="animate-spin" />}
