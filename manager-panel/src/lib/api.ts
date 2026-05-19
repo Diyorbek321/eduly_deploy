@@ -20,7 +20,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       sessionStorage.removeItem('mp_token');
       sessionStorage.removeItem('mp_user');
-      window.location.href = '/login';
+      window.location.href = '/manager/login';
     }
     return Promise.reject(err);
   }

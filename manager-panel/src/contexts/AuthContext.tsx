@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null); setUser(null);
     sessionStorage.removeItem('mp_token');
     sessionStorage.removeItem('mp_user');
-    window.location.href = '/login';
+    window.location.href = '/manager/login';
   };
 
   if (loading) {
