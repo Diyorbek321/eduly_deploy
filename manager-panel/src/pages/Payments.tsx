@@ -110,8 +110,8 @@ export const Payments = () => {
       setStudentSearch('');
       await load();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string } } };
-      setError(e?.response?.data?.detail ?? "Xatolik yuz berdi");
+      const e = err as { response?: { data?: { message?: string; detail?: string } } };
+      setError(e?.response?.data?.message ?? e?.response?.data?.detail ?? "Xatolik yuz berdi");
     } finally {
       setSaving(false);
     }

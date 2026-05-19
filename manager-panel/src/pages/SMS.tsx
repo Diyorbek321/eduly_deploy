@@ -54,7 +54,7 @@ export const SMS = () => {
   const loadHistory = async () => {
     setHistoryLoading(true);
     try {
-      const res = await api.get('/sms');
+      const res = await api.get('/sms/history');
       setHistory(Array.isArray(res.data) ? res.data : (res.data?.items ?? []));
     } finally {
       setHistoryLoading(false);
@@ -74,17 +74,18 @@ export const SMS = () => {
     }
     setSending(true);
     try {
-      await api.post('/sms/send', {
+      await api.post('/sms/bulk', {
         recipient_type: recipientType,
-        group_id: recipientType === 'group' ? Number(groupId) : undefined,
+        group_id: recipientType === 'group' && groupId ? Number(groupId) : null,
         message,
+        category: "Boshqa",
       });
       setSent(true);
       setMessage('');
       setTimeout(() => setSent(false), 3000);
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string } } };
-      setError(e?.response?.data?.detail ?? "Xatolik yuz berdi");
+      const e = err as { response?: { data?: { message?: string; detail?: string } } };
+      setError(e?.response?.data?.message ?? e?.response?.data?.detail ?? "Xatolik yuz berdi");
     } finally {
       setSending(false);
     }

@@ -102,16 +102,11 @@ export const Attendance = () => {
     if (!selectedGroup || records.length === 0) return;
     setSaving(true);
     try {
-      await Promise.all(
-        records.map(r =>
-          api.post('/attendances', {
-            group_id: Number(selectedGroup),
-            student_id: r.student_id,
-            date,
-            status: r.status,
-          })
-        )
-      );
+      await api.post('/attendances/bulk', {
+        group_id: Number(selectedGroup),
+        date,
+        records: records.map(r => ({ student_id: r.student_id, status: r.status })),
+      });
       setSaved(true);
     } catch {
       // silently handle

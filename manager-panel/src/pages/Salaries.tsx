@@ -67,7 +67,7 @@ export const Salaries = () => {
   const handleMarkPaid = async (salaryId: number) => {
     setPaying(salaryId);
     try {
-      await api.put(`/salaries/${salaryId}`, { is_paid: true });
+      await api.post(`/salaries/${salaryId}/pay`);
       await load();
     } catch {
       // ignore

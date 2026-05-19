@@ -16,6 +16,8 @@ interface AddTeacherForm {
   phone: string;
   specialty: string;
   status: string;
+  email: string;
+  password: string;
 }
 
 const EMPTY_FORM: AddTeacherForm = {
@@ -23,6 +25,8 @@ const EMPTY_FORM: AddTeacherForm = {
   phone: '',
   specialty: '',
   status: 'Faol',
+  email: '',
+  password: '',
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -61,19 +65,26 @@ export const Teachers = () => {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!form.full_name.trim() || !form.phone.trim()) {
+    if (!form.full_name.trim() || !form.phone.trim() || !form.email.trim() || !form.password.trim()) {
       setError("Ism va telefon majburiy");
       return;
     }
     setSaving(true);
     try {
-      await api.post('/teachers', form);
+      await api.post('/teachers', {
+        name: form.full_name,
+        phone: form.phone,
+        specialty: form.specialty || null,
+        status: form.status,
+        email: form.email,
+        password: form.password,
+      });
       setModalOpen(false);
       setForm(EMPTY_FORM);
       await load();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string } } };
-      setError(e?.response?.data?.detail ?? "Xatolik yuz berdi");
+      const e = err as { response?: { data?: { message?: string; detail?: string } } };
+      setError(e?.response?.data?.message ?? e?.response?.data?.detail ?? "Xatolik yuz berdi");
     } finally {
       setSaving(false);
     }
@@ -190,6 +201,26 @@ export const Teachers = () => {
                   onChange={e => setForm(f => ({ ...f, specialty: e.target.value }))}
                   className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200"
                   placeholder="Ingliz tili"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">Email *</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200"
+                  placeholder="teacher@school.uz"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">Parol *</label>
+                <input
+                  type="password"
+                  value={form.password}
+                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200"
+                  placeholder="Kamida 8 ta belgi"
                 />
               </div>
               <div>
