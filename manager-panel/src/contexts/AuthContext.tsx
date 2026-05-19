@@ -6,6 +6,7 @@ export interface MpUser {
   email: string;
   name: string | null;
   center_id: number | null;
+  role: string;  // managers always have 'ADMIN' role
 }
 
 interface AuthCtx {
@@ -34,7 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         api.get('/auth/me')
           .then(res => {
             const d = res.data;
-            setUser({ id: String(d.id), email: d.email, name: d.name ?? null, center_id: d.center_id ?? null });
+            setUser({ id: String(d.id), email: d.email, name: d.name ?? null, center_id: d.center_id ?? null, role: d.role ?? 'ADMIN' });
           })
           .catch(() => {
             sessionStorage.removeItem('mp_token');

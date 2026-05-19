@@ -40,6 +40,7 @@ export const Login = () => {
         email: userBrief.email,
         name: userBrief.name ?? null,
         center_id: userBrief.center_id ?? null,
+        role: userBrief.role ?? 'ADMIN',
       });
       navigate('/', { replace: true });
     } catch (e: any) {

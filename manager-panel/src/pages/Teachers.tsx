@@ -1,215 +1,562 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { GraduationCap, Plus, Loader2, Search, Phone, Star, X, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { 
+  Plus, 
+  Search, 
+  MoreVertical, 
+  Star, 
+  Users, 
+  Clock, 
+  Phone,
+  GraduationCap,
+  Eye,
+  X,
+  User,
+  Briefcase,
+  DollarSign,
+  Edit2,
+  Trash2,
+  Camera,
+  Key,
+  Lock
+} from 'lucide-react';
+
+import { cn } from '../lib/utils';
+import { Teacher } from '../types';
+import { Modal } from '../components/Modal';
+import { useNavigate } from 'react-router-dom';
+import { encodeId } from '../lib/hashId';
+
+import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api';
 
-interface Teacher {
-  id: number;
-  name: string;
-  phone: string;
-  specialty: string | null;
-  status: string;
-  rating?: number;
-  salary_percent?: number;
-  hourly_rate?: number;
-}
-
-const INPUT = "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 bg-white";
-
-const STATUS_STYLE: Record<string, string> = {
-  'Faol':   'bg-emerald-50 text-emerald-700',
-  'Nofaol': 'bg-slate-100 text-slate-500',
-};
-
-function genPassword() {
-  const c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  return 'Teacher' + Array.from({ length: 8 }, () => c[Math.floor(Math.random() * c.length)]).join('') + '1';
-}
-
 export const Teachers = () => {
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [showPw, setShowPw] = useState(false);
-  const [form, setForm] = useState({ name: '', phone: '', specialty: '', status: 'Faol', email: '', password: '' });
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const mapTeacher = (t: any): Teacher => ({
+    id: String(t.id),
+    name: t.name,
+    phone: t.phone,
+    specialty: t.specialty || '',
+    salary: 0,
+    bonus: 0,
+    hourlyRate: t.hourly_rate ?? 0,
+    salaryPercent: t.salary_percent ?? 40,
+    status: t.status ?? 'Faol',
+    groupsCount: t.groups_count ?? 0,
+    studentsCount: t.students_count ?? 0,
+    hours: 0,
+    rating: t.rating ?? 0,
+    avatar: t.avatar || undefined,
+    experience: t.experience || undefined,
+    birthDate: t.birth_date || undefined,
+    bio: t.bio || undefined,
+    login: t.email || undefined
+  });
+
+  const [teacherList, setTeacherList] = useState<Teacher[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
+  const [teacherToDelete, setTeacherToDelete] = useState<Teacher | null>(null);
+
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    specialty: '',
+    salary: 0,
+    bonus: 0,
+    hourlyRate: 0,
+    salaryPercent: 40,
+    status: 'Faol',
+    avatar: '',
+    email: '',
+    password: ''
+  });
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const fetchTeachers = async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      const res = await api.get('/teachers', { params: { limit: 200 } });
-      const raw = res.data;
-      const list = Array.isArray(raw) ? raw : (raw?.items ?? raw?.data ?? []);
-      setTeachers(list);
-    } catch {
-      setTeachers([]);
+      const params: Record<string, string> = {};
+      if (searchQuery) params.search = searchQuery;
+      const res = await api.get('/teachers', { params });
+      setTeacherList(res.data.items.map(mapTeacher));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "O'qituvchilarni yuklashda xatolik");
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
-  }, []);
+  };
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    fetchTeachers();
+  }, [searchQuery]);
 
-  const filtered = teachers.filter(t =>
-    !search ||
-    (t.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-    (t.specialty ?? '').toLowerCase().includes(search.toLowerCase())
-  );
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, avatar: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    if (!form.name.trim() || !form.phone.trim() || !form.email.trim() || !form.password.trim()) {
-      setError("Ism, telefon, email va parol majburiy");
+  const handleAddClick = () => {
+    setEditingTeacher(null);
+    setSaveError(null);
+    setFormData({
+      name: '',
+      phone: '',
+      specialty: '',
+      salary: 0,
+      bonus: 0,
+      hourlyRate: 0,
+      salaryPercent: 40,
+      status: 'Faol',
+      avatar: '',
+      email: '',
+      password: ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleEditClick = (teacher: Teacher) => {
+    setEditingTeacher(teacher);
+    setSaveError(null);
+    setFormData({
+      name: teacher.name,
+      phone: teacher.phone,
+      specialty: teacher.specialty,
+      salary: teacher.salary,
+      bonus: teacher.bonus,
+      hourlyRate: teacher.hourlyRate,
+      salaryPercent: (teacher as any).salaryPercent ?? 40,
+      status: teacher.status,
+      avatar: teacher.avatar || '',
+      email: teacher.login || '',
+      password: ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteClick = (teacher: Teacher) => {
+    setTeacherToDelete(teacher);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (teacherToDelete) {
+      try {
+        await api.delete(`/teachers/${teacherToDelete.id}`);
+        setIsDeleteModalOpen(false);
+        setTeacherToDelete(null);
+        fetchTeachers();
+      } catch {
+        // error handled by interceptor
+      }
+    }
+  };
+
+  const handleSave = async () => {
+    setSaveError(null);
+
+    if (!formData.name.trim() || !formData.phone.trim()) {
+      setSaveError("Ism va telefon majburiy");
       return;
     }
-    setSaving(true);
+    if (!editingTeacher) {
+      if (!formData.email.trim() || !formData.password.trim()) {
+        setSaveError("Yangi o'qituvchi uchun email va parol majburiy");
+        return;
+      }
+      if (formData.password.length < 6) {
+        setSaveError("Parol kamida 6 ta belgidan iborat bo'lishi kerak");
+        return;
+      }
+    } else if (formData.password && formData.password.length < 6) {
+      setSaveError("Parol kamida 6 ta belgidan iborat bo'lishi kerak");
+      return;
+    }
+
     try {
-      await api.post('/teachers', {
-        name: form.name,
-        phone: form.phone,
-        specialty: form.specialty || null,
-        status: form.status,
-        email: form.email,
-        password: form.password,
-      });
-      setModalOpen(false);
-      setForm({ name: '', phone: '', specialty: '', status: 'Faol', email: '', password: '' });
-      await load();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string; detail?: string } } };
-      setError(e?.response?.data?.message ?? e?.response?.data?.detail ?? "Xatolik yuz berdi");
-    } finally {
-      setSaving(false);
+      const basePayload: Record<string, unknown> = {
+        name: formData.name,
+        phone: formData.phone,
+        specialty: formData.specialty,
+        hourly_rate: formData.hourlyRate,
+        salary_percent: formData.salaryPercent,
+        status: formData.status,
+        avatar: formData.avatar || null,
+      };
+
+      if (editingTeacher) {
+        if (formData.email && formData.email !== (editingTeacher.login || '')) {
+          basePayload.email = formData.email;
+        }
+        if (formData.password) {
+          basePayload.password = formData.password;
+        }
+        await api.put(`/teachers/${editingTeacher.id}`, basePayload);
+      } else {
+        basePayload.email = formData.email;
+        basePayload.password = formData.password;
+        await api.post('/teachers', basePayload);
+      }
+      setIsModalOpen(false);
+      fetchTeachers();
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      setSaveError(typeof detail === 'string' ? detail : "Saqlashda xatolik yuz berdi");
     }
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-5 max-w-[1200px] mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="size-10 rounded-xl bg-purple-50 flex items-center justify-center">
-            <GraduationCap size={20} className="text-purple-600" />
-          </div>
+    <div className="flex-1 flex flex-col min-w-0">
+      
+      
+      <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 max-w-[1440px] mx-auto w-full">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-black text-slate-900">O'qituvchilar</h1>
-            <p className="text-sm text-slate-400">{teachers.length} ta o'qituvchi</p>
+            <h2 className="text-3xl font-black tracking-tight text-slate-900">O‘qituvchilar</h2>
+            <p className="text-sm text-slate-500 mt-1">Markazimizning malakali mutaxassislari</p>
+          </div>
+          {isAdmin && (
+            <button 
+              onClick={handleAddClick}
+              className="flex items-center gap-2 bg-[#ec5b13] hover:bg-orange-600 text-white px-6 py-3 rounded-2xl font-bold transition-all shadow-lg shadow-orange-200 active:scale-95"
+            >
+              <Plus size={20} />
+              <span>O‘qituvchi qo‘shish</span>
+            </button>
+          )}
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="relative group max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#ec5b13] transition-colors" size={20} />
+            <input 
+              type="text" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Ism yoki mutaxassislik bo'yicha qidirish" 
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 placeholder:text-slate-400 text-sm outline-none transition-all"
+            />
           </div>
         </div>
-        <button type="button" onClick={() => setModalOpen(true)}
-          className="flex items-center gap-2 bg-[#ec5b13] text-white rounded-xl px-4 py-2.5 text-sm font-bold hover:bg-orange-600">
-          <Plus size={16} /> Qo'shish
-        </button>
-      </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Ism yoki mutaxassislik..." className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />
-      </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+          {teacherList.map((teacher) => (
+            <div key={teacher.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-xl transition-all group">
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="relative">
+                    <div className="size-20 rounded-2xl bg-slate-100 overflow-hidden border-2 border-slate-50 group-hover:border-[#ec5b13]/20 transition-all flex items-center justify-center">
+                      {teacher.avatar ? (
+                        <img 
+                          src={teacher.avatar} 
+                          alt={teacher.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <img 
+                          src={`https://picsum.photos/seed/${teacher.id}/200/200`} 
+                          alt={teacher.name}
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                    </div>
+                    <div className={cn(
+                      "absolute -bottom-1 -right-1 size-4 rounded-full border-2 border-white",
+                      teacher.status === 'Faol' ? "bg-emerald-500" : "bg-slate-300"
+                    )}></div>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => handleEditClick(teacher)}
+                        className="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                        title="Tahrirlash"
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteClick(teacher)}
+                        className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                        title="O'chirish"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  )}
+                </div>
 
-      {/* Grid */}
-      {loading ? (
-        <div className="flex items-center justify-center h-48 text-slate-400">
-          <Loader2 size={24} className="animate-spin mr-2" /> Yuklanmoqda...
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-slate-400">
-          <GraduationCap size={36} className="mx-auto mb-2 opacity-30" />
-          <p>O'qituvchi topilmadi</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(t => (
-            <div key={t.id} className="bg-white rounded-2xl border border-slate-200 p-5">
-              <div className="flex items-start gap-3 mb-3">
-                <div className="size-11 rounded-xl bg-purple-50 flex items-center justify-center font-black text-base text-purple-600 flex-shrink-0">
-                  {(t.name ?? '?').charAt(0).toUpperCase()}
+                <div className="mb-6">
+                  <h3 className="text-lg font-black text-slate-900 group-hover:text-[#ec5b13] transition-colors truncate">{teacher.name}</h3>
+                  <p className="text-sm font-bold text-[#ec5b13] bg-orange-50 inline-block px-2 py-0.5 rounded-lg mt-1">{teacher.specialty}</p>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-slate-900 truncate">{t.name}</p>
-                  {t.specialty && <p className="text-xs text-slate-400 mt-0.5">{t.specialty}</p>}
+
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Users size={14} />
+                      <span className="text-[10px] font-black uppercase tracking-wider">Guruhlar</span>
+                    </div>
+                    <p className="text-sm font-black text-slate-900">{teacher.groupsCount} ta</p>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Clock size={14} />
+                      <span className="text-[10px] font-black uppercase tracking-wider">Dars soati</span>
+                    </div>
+                    <p className="text-sm font-black text-slate-900">{teacher.hours} soat</p>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Star size={14} className="text-amber-400 fill-amber-400" />
+                      <span className="text-[10px] font-black uppercase tracking-wider">Reyting</span>
+                    </div>
+                    <p className="text-sm font-black text-slate-900">{teacher.rating}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Phone size={14} />
+                      <span className="text-[10px] font-black uppercase tracking-wider">Aloqa</span>
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-600 truncate">{teacher.phone}</p>
+                  </div>
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${STATUS_STYLE[t.status] ?? 'bg-slate-100 text-slate-500'}`}>
-                  {t.status}
-                </span>
-              </div>
-              <div className="space-y-1 text-xs text-slate-500">
-                <span className="flex items-center gap-1.5"><Phone size={11} />{t.phone}</span>
-                {(t.rating ?? 0) > 0 && (
-                  <span className="flex items-center gap-1.5">
-                    <Star size={11} className="text-amber-400 fill-amber-400" />
-                    {t.rating?.toFixed(1)}
-                  </span>
-                )}
+
+                <button 
+                  onClick={() => navigate(`/teachers/${encodeId(teacher.id)}`)}
+                  className="w-full py-3 bg-slate-50 hover:bg-[#ec5b13] hover:text-white rounded-xl text-sm font-bold text-slate-600 transition-all flex items-center justify-center gap-2"
+                >
+                  <Eye size={16} />
+                  Profilni ko'rish
+                </button>
               </div>
             </div>
           ))}
         </div>
-      )}
+      </main>
 
-      {/* Add Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
-              <h2 className="font-black text-slate-900">Yangi o'qituvchi</h2>
-              <button type="button" onClick={() => { setModalOpen(false); setError(''); }}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"><X size={18} /></button>
+      {/* Add/Edit Teacher Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={editingTeacher ? "O'qituvchi ma'lumotlarini tahrirlash" : "O‘qituvchi qo‘shish"}
+        footer={
+          <>
+            <button onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">Bekor qilish</button>
+            <button onClick={handleSave} className="flex-1 py-3 bg-[#ec5b13] text-white rounded-2xl text-sm font-bold hover:bg-orange-600 transition-all shadow-lg shadow-orange-200">Saqlash</button>
+          </>
+        }
+      >
+        {saveError && (
+          <div className="mb-4 bg-rose-50 border-l-4 border-rose-500 p-3 rounded-r-xl">
+            <p className="text-sm text-rose-700 font-bold">{saveError}</p>
+          </div>
+        )}
+        <div className="flex flex-col items-center mb-6">
+          <div className="relative group cursor-pointer">
+            <div className="size-24 rounded-2xl bg-slate-100 border-4 border-white shadow-lg overflow-hidden flex items-center justify-center">
+              {formData.avatar ? (
+                <img src={formData.avatar} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <User size={32} className="text-slate-300" />
+              )}
             </div>
-            <form onSubmit={handleAdd} className="px-6 py-5 space-y-4 overflow-y-auto">
-              {error && <div className="bg-rose-50 text-rose-600 text-sm px-4 py-2.5 rounded-xl">{error}</div>}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">Ism Familiya *</label>
-                <input className={INPUT} placeholder="Botir Toshmatov" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">Telefon *</label>
-                <input className={INPUT} placeholder="+998901234567" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">Mutaxassislik</label>
-                <input className={INPUT} placeholder="Ingliz tili" value={form.specialty} onChange={e => setForm(p => ({ ...p, specialty: e.target.value }))} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">Email *</label>
-                <input type="email" className={INPUT} placeholder="teacher@school.uz" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">Parol *</label>
-                <div className="relative">
-                  <input type={showPw ? 'text' : 'password'} className={`${INPUT} pr-20`} value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                    <button type="button" onClick={() => setForm(p => ({ ...p, password: genPassword() }))} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg" title="Avtomatik parol">
-                      <RefreshCw size={13} />
-                    </button>
-                    <button type="button" onClick={() => setShowPw(v => !v)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg">
-                      {showPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">Status</label>
-                <select className={INPUT} value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}>
-                  <option>Faol</option><option>Nofaol</option>
-                </select>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => { setModalOpen(false); setError(''); }}
-                  className="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600">Bekor</button>
-                <button type="submit" disabled={saving}
-                  className="flex-1 bg-[#ec5b13] text-white rounded-xl px-4 py-2.5 text-sm font-bold hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2">
-                  {saving && <Loader2 size={14} className="animate-spin" />} Saqlash
-                </button>
-              </div>
-            </form>
+            <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl cursor-pointer">
+              <Camera size={24} />
+              <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+            </label>
+          </div>
+          <p className="text-xs font-bold text-slate-400 mt-2">Rasm yuklash</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <label className="text-xs font-black text-slate-400 uppercase">Ismi sharifi</label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+              <input 
+                type="text" 
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" 
+                placeholder="Masalan: Alisher Navoiy" 
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-black text-slate-400 uppercase">Telefon raqami</label>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+              <input 
+                type="text" 
+                value={formData.phone}
+                onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" 
+                placeholder="+998 90 123 45 67" 
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-black text-slate-400 uppercase">Mutaxassisligi</label>
+            <div className="relative">
+              <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+              <input 
+                type="text" 
+                value={formData.specialty}
+                onChange={(e) => setFormData(prev => ({ ...prev, specialty: e.target.value }))}
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" 
+                placeholder="Masalan: Matematika" 
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-black text-slate-400 uppercase">Oylik maoshi</label>
+            <div className="relative">
+              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+              <input 
+                type="number" 
+                value={formData.salary}
+                onChange={(e) => setFormData(prev => ({ ...prev, salary: Number(e.target.value) }))}
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" 
+                placeholder="Masalan: 4,500,000" 
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-black text-slate-400 uppercase">Bonus (UZS)</label>
+            <div className="relative">
+              <Plus className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+              <input 
+                type="number" 
+                value={formData.bonus}
+                onChange={(e) => setFormData(prev => ({ ...prev, bonus: Number(e.target.value) }))}
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" 
+                placeholder="Masalan: 500,000" 
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-black text-slate-400 uppercase">Soatbay stavka (UZS)</label>
+            <div className="relative">
+              <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+              <input 
+                type="number" 
+                value={formData.hourlyRate}
+                onChange={(e) => setFormData(prev => ({ ...prev, hourlyRate: Number(e.target.value) }))}
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" 
+                placeholder="Masalan: 35,000" 
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-black text-slate-400 uppercase">Maosh foizi (%)</label>
+            <div className="relative">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={formData.salaryPercent}
+                onChange={(e) => setFormData(prev => ({ ...prev, salaryPercent: Number(e.target.value) }))}
+                className="w-full px-4 py-3 pr-10 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm"
+                placeholder="40"
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">%</span>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium">O'quvchilar to'lovidan olinadigan ulush</p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-black text-slate-400 uppercase">Status</label>
+            <select
+              value={formData.status}
+              onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+              className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm cursor-pointer"
+            >
+              <option>Faol</option>
+              <option>Nofaol</option>
+            </select>
           </div>
         </div>
-      )}
+
+        <div className="pt-4 border-t border-slate-100 mt-6">
+          <h4 className="text-sm font-black text-slate-900 mb-1">Tizimga kirish hisobi</h4>
+          <p className="text-xs text-slate-400 mb-4">
+            {editingTeacher
+              ? "Parolni o'zgartirish uchun yangi parolni kiriting. Bo'sh qoldirilsa, mavjud parol saqlanadi."
+              : "O'qituvchi shu email va parol bilan tizimga kiradi."}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-1">
+              <label className="text-xs font-black text-slate-400 uppercase">Email</label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm"
+                  placeholder="teacher@edusaas.com"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-black text-slate-400 uppercase">
+                {editingTeacher ? "Yangi parol" : "Parol"}
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm"
+                  placeholder={editingTeacher ? "Bo'sh qoldiring — o'zgartirilmasin" : "Kamida 6 ta belgi"}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        title="O'qituvchini o'chirish"
+        footer={
+          <>
+            <button onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">Bekor qilish</button>
+            <button onClick={confirmDelete} className="flex-1 py-3 bg-rose-600 text-white rounded-2xl text-sm font-bold hover:bg-rose-700 transition-all shadow-lg shadow-rose-200">Ha, o'chirilsin</button>
+          </>
+        }
+      >
+        <div className="text-center space-y-4">
+          <div className="size-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto">
+            <Trash2 size={32} />
+          </div>
+          <div>
+            <h3 className="text-lg font-black text-slate-900">Ishonchingiz komilmi?</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              Siz <span className="font-bold text-slate-900">{teacherToDelete?.name}</span> o'qituvchini tizimdan o'chirmoqchisiz. Bu amalni ortga qaytarib bo'lmaydi.
+            </p>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
