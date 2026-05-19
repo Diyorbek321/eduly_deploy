@@ -169,16 +169,6 @@ export function Login() {
               </button>
             </div>
 
-            <div>
-              <button
-                type="button"
-                onClick={() => onSubmit({ email: 'admin@edusaas.com', password: 'Admin1234!' })}
-                disabled={isLoading}
-                className="w-full flex justify-center py-3 px-4 border-2 border-[#ec5b13] rounded-xl shadow-sm text-sm font-bold text-[#ec5b13] bg-white hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-              >
-                Tezkor kirish (Admin)
-              </button>
-            </div>
           </form>
           
           <div className="mt-6 text-center text-xs text-slate-500">

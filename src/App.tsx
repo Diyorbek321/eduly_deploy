@@ -15,6 +15,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Students } from './pages/Students';
 import { Teachers } from './pages/Teachers';
 import { TeacherProfile } from './pages/TeacherProfile';
+import { TeacherLeaderboard } from './pages/TeacherLeaderboard';
 import { Groups } from './pages/Groups';
 import { Attendance } from './pages/Attendance';
 import { Payments } from './pages/Payments';
@@ -25,9 +26,18 @@ import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { Schedule } from './pages/Schedule';
 import { Gamification } from './pages/Gamification';
+import { Library } from './pages/Library';
 import { SupportTeachers } from './pages/SupportTeachers';
 import { SMS } from './pages/SMS';
 import { Chat } from './pages/Chat';
+import { Branches } from './pages/Branches';
+import { CRM } from './pages/CRM';
+import { Kanban } from './pages/Kanban';
+import { BranchManagers } from './pages/BranchManagers';
+import { WebsiteManager } from './pages/WebsiteManager';
+import { Polls } from './pages/Polls';
+import { CourseModules } from './pages/CourseModules';
+import { BranchProvider } from './contexts/BranchContext';
 
 // Teacher Dashboard pages
 import { TeacherDashboard } from './pages/teacher/TeacherDashboard';
@@ -50,6 +60,7 @@ export default function App() {
   return (
     <AuthProvider>
       <SettingsProvider>
+      <BranchProvider>
       <Router>
         <Routes>
           <Route path="/landing" element={<Landing />} />
@@ -61,6 +72,7 @@ export default function App() {
             <Route path="students/:id" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']}><StudentProfile /></ProtectedRoute>} />
             <Route path="teachers" element={<ProtectedRoute allowedRoles={['ADMIN']}><Teachers /></ProtectedRoute>} />
             <Route path="teachers/:id" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER']}><TeacherProfile /></ProtectedRoute>} />
+            <Route path="teacher-leaderboard" element={<ProtectedRoute allowedRoles={['ADMIN']}><TeacherLeaderboard /></ProtectedRoute>} />
             <Route path="support-teachers" element={<ProtectedRoute allowedRoles={['ADMIN']}><SupportTeachers /></ProtectedRoute>} />
             <Route path="groups" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']}><Groups /></ProtectedRoute>} />
             <Route path="courses" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']}><Courses /></ProtectedRoute>} />
@@ -71,7 +83,15 @@ export default function App() {
             <Route path="sms" element={<ProtectedRoute allowedRoles={['ADMIN']}><SMS /></ProtectedRoute>} />
             <Route path="chat" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']}><Chat /></ProtectedRoute>} />
             <Route path="gamification" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']}><Gamification /></ProtectedRoute>} />
+            <Route path="library" element={<ProtectedRoute allowedRoles={['ADMIN']}><Library /></ProtectedRoute>} />
             <Route path="reports" element={<ProtectedRoute allowedRoles={['ADMIN']}><Reports /></ProtectedRoute>} />
+            <Route path="branches" element={<ProtectedRoute allowedRoles={['ADMIN']}><Branches /></ProtectedRoute>} />
+            <Route path="crm" element={<ProtectedRoute allowedRoles={['ADMIN']}><CRM /></ProtectedRoute>} />
+            <Route path="kanban" element={<ProtectedRoute allowedRoles={['ADMIN']}><Kanban /></ProtectedRoute>} />
+            <Route path="branch-managers" element={<ProtectedRoute allowedRoles={['ADMIN']}><BranchManagers /></ProtectedRoute>} />
+            <Route path="website" element={<ProtectedRoute allowedRoles={['ADMIN']}><WebsiteManager /></ProtectedRoute>} />
+            <Route path="polls" element={<ProtectedRoute allowedRoles={['ADMIN']}><Polls /></ProtectedRoute>} />
+            <Route path="course-modules" element={<ProtectedRoute allowedRoles={['ADMIN']}><CourseModules /></ProtectedRoute>} />
             <Route path="settings" element={<Settings />} />
 
             {/* Teacher-specific routes */}
@@ -86,6 +106,7 @@ export default function App() {
           </Route>
         </Routes>
       </Router>
+      </BranchProvider>
       </SettingsProvider>
     </AuthProvider>
   );

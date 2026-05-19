@@ -3,11 +3,13 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -29,11 +31,22 @@ from app.models.models import Base
 from app.routers import (
     attendances,
     auth,
+    branch_managers,
+    branches,
     courses,
+    crm,
+    daily_quests,
     dashboard,
+    finance,
     groups,
     homework,
+    kanban,
+    kpi,
+    materials,
+    modules,
     payments,
+    polls,
+    public_api,
     rewards,
     rooms,
     salaries,
@@ -46,6 +59,7 @@ from app.routers import (
     teacher_dashboard,
     teachers,
     users,
+    website_manager,
 )
 
 settings = get_settings()
@@ -69,8 +83,13 @@ async def lifespan(app: FastAPI):
 
             from app.services.sms.scheduler import register_jobs
 
+            from app.services.finance_scheduler import register_finance_jobs
+
             scheduler = BackgroundScheduler(timezone=os.environ.get("EDULY_TZ", "Asia/Tashkent"))
             register_jobs(scheduler)
+            register_finance_jobs(scheduler)
+            from app.services.quest_generator import register_quest_jobs
+            register_quest_jobs(scheduler)
             scheduler.start()
             app.state.scheduler = scheduler
         except Exception:  # noqa: BLE001 — never block app startup on scheduler
@@ -136,7 +155,7 @@ app.add_middleware(
         o.strip()
         for o in os.environ.get(
             "CORS_ORIGINS",
-            "http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:5174,http://127.0.0.1:3000,http://127.0.0.1:3001,exp://*",
+            "http://localhost:3000,http://localhost:3001,http://localhost:3003,http://localhost:5173,http://localhost:5174,http://127.0.0.1:3000,http://127.0.0.1:3001,https://localhost,capacitor://localhost,exp://*",
         ).split(",")
     ],
     allow_credentials=True,
@@ -165,7 +184,24 @@ app.include_router(sms.router, prefix="/api/sms", tags=["SMS"])
 app.include_router(support_bookings.router, prefix="/api/support-bookings", tags=["Support Bookings"])
 app.include_router(rewards.router, prefix="/api/rewards", tags=["Rewards"])
 app.include_router(homework.router, prefix="/api/homework", tags=["Homework"])
+app.include_router(kpi.router, prefix="/api/kpi", tags=["Teacher KPI"])
+app.include_router(materials.router, prefix="/api/materials", tags=["Library"])
+app.include_router(branches.router, prefix="/api/branches", tags=["Branches"])
+app.include_router(branch_managers.router, prefix="/api/branch-managers", tags=["Branch Managers"])
+app.include_router(finance.router, prefix="/api/finance", tags=["Finance"])
+app.include_router(crm.router, prefix="/api/crm", tags=["CRM"])
+app.include_router(kanban.router, prefix="/api/kanban", tags=["Kanban"])
 app.include_router(super_admin.router, prefix="/api/super-admin", tags=["Super Admin"])
+app.include_router(modules.router, prefix="/api/modules", tags=["Course Modules"])
+app.include_router(daily_quests.router, prefix="/api/daily-quests", tags=["Daily Quests"])
+app.include_router(polls.router, prefix="/api/polls", tags=["Polls"])
+app.include_router(public_api.router, prefix="/api/public", tags=["Public"])
+app.include_router(website_manager.router, prefix="/api/website", tags=["Website Manager"])
+
+# Serve uploaded files at /media — must be mounted AFTER all API routes
+_uploads_dir = Path(__file__).parent.parent / "uploads"
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(_uploads_dir)), name="media")
 
 
 @app.get("/api/health")

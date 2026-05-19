@@ -1,0 +1,32 @@
+User-agent: *
+Allow: /
+
+# Block internal app routes from being indexed — only the marketing landing should rank
+Disallow: /login
+Disallow: /dashboard
+Disallow: /students
+Disallow: /teachers
+Disallow: /groups
+Disallow: /courses
+Disallow: /payments
+Disallow: /salaries
+Disallow: /attendance
+Disallow: /reports
+Disallow: /settings
+Disallow: /chat
+Disallow: /sms
+Disallow: /gamification
+Disallow: /student-demo
+Disallow: /api/
+
+# AI crawlers — allow (helps brand discovery in AI answers)
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+Sitemap: https://eduly.uz/sitemap.xml

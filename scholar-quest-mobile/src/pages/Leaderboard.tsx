@@ -1,8 +1,11 @@
 import { Trophy, ChevronUp, Star, Globe, Building2, ShieldCheck } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocale } from '../context/LocaleContext';
+import { useStudent } from '../context/StudentContext';
+import { useAuth } from '../context/AuthContext';
+import { rewardService } from '../services/studentService';
 
 type Scope = 'Global' | 'Branch' | 'Circle';
 type Timeframe = 'Daily' | 'Weekly' | 'Circle';
@@ -71,14 +74,32 @@ const itemVariants = {
 export default function Leaderboard() {
   const [timeframe, setTimeframe] = useState<Timeframe>('Weekly');
   const { t } = useLocale();
+  const { profile } = useStudent();
+  const { user } = useAuth();
+  const [coins, setCoins] = useState<number>(0);
 
-  // Daily/Weekly use Global scope; "Circle" filter narrows to the user's circle scope.
+  useEffect(() => {
+    if (!user || user.role !== 'STUDENT') return;
+    let cancelled = false;
+    rewardService.wallet()
+      .then(w => { if (!cancelled) setCoins(w.coins); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
   const scope: Scope = timeframe === 'Circle' ? 'Circle' : 'Global';
 
-  const rankings = useMemo(
-    () => applyTimeframe(baseRankings[scope], timeframe),
-    [scope, timeframe]
-  );
+  const rankings = useMemo<RankEntry[]>(() => {
+    const myName = profile?.name ?? user?.name ?? 'You';
+    const myEntry: RankEntry = {
+      rank: '01',
+      name: myName,
+      points: coins.toLocaleString('en-US'),
+      img: profile?.avatar || `https://picsum.photos/seed/u${user?.id ?? 'me'}/100`,
+      isUser: true,
+    };
+    return [myEntry];
+  }, [profile, user, coins, scope, timeframe]);
 
   const podium = rankings.slice(0, 3);
   const list = rankings;
@@ -161,11 +182,7 @@ export default function Leaderboard() {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
-            // nested-scroll: contains touch gestures so the parent page doesn't
-            // scroll when the user drags inside the rank list.
-            className="space-y-3 max-h-[60vh] overflow-y-auto nested-scroll scrollbar-hide pr-1"
-            onTouchMoveCapture={(e) => e.stopPropagation()}
-            onWheelCapture={(e) => e.stopPropagation()}
+            className="space-y-3"
           >
             {list.length === 0 && (
               <div className="bg-surface-container-low rounded-3xl p-8 text-center text-on-surface-variant">

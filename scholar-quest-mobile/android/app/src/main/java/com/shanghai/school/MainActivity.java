@@ -1,4 +1,4 @@
-package com.eduly.scholarquest;
+package com.shanghai.school;
 
 import com.getcapacitor.BridgeActivity;
 

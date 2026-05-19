@@ -23,6 +23,9 @@ const LessonDetail = lazy(() => import('./pages/LessonDetail'));
 const ClassDetail = lazy(() => import('./pages/ClassDetail'));
 const CircleDetail = lazy(() => import('./pages/CircleDetail'));
 const Homework = lazy(() => import('./pages/Homework'));
+const Library = lazy(() => import('./pages/Library'));
+const PollsPage = lazy(() => import('./pages/Polls'));
+const DailyQuestPage = lazy(() => import('./pages/DailyQuest'));
 
 // AITutor pulls in the Gemini SDK (~150 KB). Lazy-load it so the initial
 // bundle stays small; the chunk is fetched the first time the student opens
@@ -81,6 +84,9 @@ function AppShell() {
               <Route path="/schedule/class/:id" element={<ClassDetail />} />
               <Route path="/circles/:id" element={<CircleDetail />} />
               <Route path="/homework" element={<Homework />} />
+              <Route path="/library" element={<Library />} />
+              <Route path="/polls" element={<PollsPage />} />
+              <Route path="/daily-quest" element={<DailyQuestPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>

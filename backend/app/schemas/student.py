@@ -3,6 +3,7 @@
 import base64
 import re
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, field_validator
 
@@ -132,10 +133,50 @@ class StudentOut(BaseModel):
     # via StudentCreate/StudentUpdate.email; never carries the password.
     login_email: str | None = None
     has_login: bool = False
+    exit_reason: str | None = None
+    exit_reason_note: str | None = None
+    exit_date: date | None = None
+    exit_called: bool = False
+    exit_called_at: datetime | None = None
+    homework_strikes: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+ExitReason = Literal[
+    "kochib_ketdi",
+    "moliyaviy",
+    "sifat",
+    "tugatdi",
+    "boshqa_markaz",
+    "sogliq",
+    "vaqt",
+    "boshqa",
+]
+
+EXIT_REASON_LABELS: dict[str, str] = {
+    "kochib_ketdi": "Ko'chib ketdi",
+    "moliyaviy": "Moliyaviy qiyinchilik",
+    "sifat": "Sifatdan qoniqmadi",
+    "tugatdi": "Kursni tugatdi",
+    "boshqa_markaz": "Boshqa markaz tanladi",
+    "sogliq": "Sog'liq muammosi",
+    "vaqt": "Vaqt topa olmadi",
+    "boshqa": "Boshqa sabab",
+}
+
+
+class ExitInfoUpdate(BaseModel):
+    exit_reason: ExitReason
+    exit_reason_note: str | None = None
+
+
+class ChurnMonthPoint(BaseModel):
+    month: str
+    total_left: int
+    breakdown: dict[str, int]
 
 
 class StudentListOut(BaseModel):

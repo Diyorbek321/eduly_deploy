@@ -79,6 +79,7 @@ const DEMO_PROFILE: MyProfile = {
   debt: 0,
   paid: 1_200_000,
   group_names: ['IELTS Intensive 7.0', "Matematika Olimpiada"],
+  homework_strikes: 0,
   created_at: '2026-03-01T08:00:00',
 };
 

@@ -1,10 +1,11 @@
-import { type ReactNode } from 'react';
-import { Coins, Flame, BookOpen, MapPin, Plus, Calendar as CalendarIcon, Users, ClipboardCheck, Trophy, Zap, CheckCircle2, Star, Timer } from 'lucide-react';
+import { type ReactNode, useEffect, useState } from 'react';
+import { Coins, Flame, BookOpen, MapPin, Plus, Calendar as CalendarIcon, Users, ClipboardCheck, Trophy, Zap, CheckCircle2, Star, Timer, BarChart2, Brain } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useGame } from '../context/GameContext';
 import { useStudent } from '../context/StudentContext';
 import { useAuth } from '../context/AuthContext';
 import { DashboardSkeleton } from '../components/Skeleton';
+import { rewardService } from '../services/studentService';
+import { api } from '../lib/api';
 
 import { Link } from 'react-router-dom';
 
@@ -31,9 +32,36 @@ const itemVariants = {
 };
 
 export default function Dashboard() {
-  const { coins } = useGame();
   const { user } = useAuth();
   const { profile, attendance, schedule, loading } = useStudent();
+  const [coins, setCoins] = useState<number | null>(null);
+  const [pendingPolls, setPendingPolls] = useState(0);
+  const [questReady, setQuestReady] = useState(false);
+
+  useEffect(() => {
+    if (!user || user.role !== 'STUDENT') return;
+    let cancelled = false;
+    rewardService.wallet()
+      .then(w => { if (!cancelled) setCoins(w.coins); })
+      .catch(() => { if (!cancelled) setCoins(0); });
+    // Fetch unvoted active polls count
+    (api.get('/daily-quests/today') as Promise<any>)
+      .then((data: any) => {
+        if (cancelled) return;
+        const quests = data?.quests ?? data?.data?.quests ?? [];
+        const hasPending = Array.isArray(quests) && quests.some((q: any) => !q.completed);
+        setQuestReady(hasPending);
+      })
+      .catch(() => {});
+    (api.get('/polls/student/active') as Promise<any>)
+      .then((data: any) => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : [];
+        setPendingPolls(list.filter((p: any) => p.my_option_id === null).length);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   // First-fetch skeleton — only when nothing has loaded yet, so that
   // background refreshes don't blank out the live UI.
@@ -63,6 +91,70 @@ export default function Dashboard() {
       animate="visible"
       className="space-y-8 pb-10"
     >
+      {/* Daily Quest banner */}
+      {questReady && (
+        <motion.a
+          href="/daily-quest"
+          variants={itemVariants}
+          className="flex items-center gap-4 rounded-3xl p-4 bg-gradient-to-r from-indigo-600 to-violet-600 border border-indigo-400/30 no-underline"
+        >
+          <div className="size-11 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
+            <Brain size={22} className="text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-black text-white text-sm leading-tight">Bugungi AI Quest tayyor!</p>
+            <p className="text-indigo-200 text-xs mt-0.5">9/10 to'g'ri → +5 🪙 coin</p>
+          </div>
+          <span className="text-white/80 text-lg">→</span>
+        </motion.a>
+      )}
+
+      {/* Active polls notification */}
+      {pendingPolls > 0 && (
+        <motion.a
+          href="/polls"
+          variants={itemVariants}
+          className="flex items-center gap-4 rounded-3xl p-4 bg-gradient-to-r from-violet-600 to-primary border border-violet-400/30 no-underline"
+        >
+          <div className="size-11 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
+            <BarChart2 size={22} className="text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-black text-white text-sm leading-tight">
+              {pendingPolls} ta so'rovnoma sizni kutmoqda
+            </p>
+            <p className="text-violet-200 text-xs mt-0.5">Ovoz bering va fikringizni bildiring</p>
+          </div>
+          <span className="text-white/80 text-lg">→</span>
+        </motion.a>
+      )}
+
+      {/* Homework strike warning */}
+      {(profile?.homework_strikes ?? 0) > 0 && (
+        <motion.div
+          variants={itemVariants}
+          className={`rounded-3xl p-4 flex items-start gap-3 ${
+            (profile?.homework_strikes ?? 0) >= 3
+              ? 'bg-red-50 border border-red-200'
+              : 'bg-amber-50 border border-amber-200'
+          }`}
+        >
+          <span className="text-2xl">{(profile?.homework_strikes ?? 0) >= 3 ? '🚨' : '⚠️'}</span>
+          <div>
+            <p className={`font-black text-sm ${(profile?.homework_strikes ?? 0) >= 3 ? 'text-red-700' : 'text-amber-700'}`}>
+              {(profile?.homework_strikes ?? 0) >= 3
+                ? "Guruhdan chiqarildingiz!"
+                : `Uyga vazifa ogohlantirishi: ${profile?.homework_strikes}/3 urinish`}
+            </p>
+            <p className={`text-xs mt-0.5 ${(profile?.homework_strikes ?? 0) >= 3 ? 'text-red-500' : 'text-amber-500'}`}>
+              {(profile?.homework_strikes ?? 0) >= 3
+                ? "3 marta ketma-ket uyga vazifani bajarmadingiz. Administrator bilan bog'laning."
+                : "Keyingi uyga vazifani o'tkazib yuborsangiz, guruhdan chiqarilasiz."}
+            </p>
+          </div>
+        </motion.div>
+      )}
+
       {/* Hero Section */}
       <motion.section variants={itemVariants} className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -75,7 +167,7 @@ export default function Dashboard() {
             </h1>
           </div>
           <div className="flex gap-3">
-            <Badge icon={<Coins className="text-primary fill-primary" size={18} />} label={`${coins} coins`} />
+            <Badge icon={<Coins className="text-primary fill-primary" size={18} />} label={`${(coins ?? 0).toLocaleString()} coins`} />
             <div className="relative">
               <Badge icon={<Flame className="text-tertiary fill-tertiary" size={18} />} label="5 days" color="tertiary" />
               <div className="absolute -top-2 -right-2 bg-secondary text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-sm">

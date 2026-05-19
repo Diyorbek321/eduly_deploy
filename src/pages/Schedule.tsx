@@ -77,8 +77,10 @@ function parseScheduleDays(schedule: string): number[] {
 }
 
 function parseStartTime(time: string): string {
-  const match = time.match(/(\d{1,2}:\d{2})/);
-  return match ? match[1] : '08:00';
+  const match = time.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return '08:00';
+  const hh = match[1].padStart(2, '0');
+  return `${hh}:${match[2]}`;
 }
 
 export const Schedule = () => {
@@ -169,8 +171,9 @@ export const Schedule = () => {
     });
   });
 
-  const timeSlots = Array.from(timeSet).sort();
+  const timeSlots = Array.from(timeSet).sort((a, b) => a.localeCompare(b));
   if (timeSlots.length === 0) timeSlots.push('08:00', '10:00', '14:00', '16:00');
+  scheduleSlots.sort((a, b) => (a.day - b.day) || a.time.localeCompare(b.time) || a.subject.localeCompare(b.subject));
 
   // Room occupancy: merge room data from API with group usage
   const groupRoomUsage = new Map<string, { current: number }>();

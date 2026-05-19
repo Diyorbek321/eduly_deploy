@@ -1,11 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { GraduationCap, Loader2, Mail, Phone, Lock, ArrowLeft, Sparkles, Settings as SettingsIcon } from 'lucide-react';
+import { GraduationCap, Loader2, Mail, Phone, Lock, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authService } from '../services/studentService';
-import { startDemoMode } from '../lib/demoMode';
-import { getApiBaseUrl, setApiBaseUrl } from '../lib/api';
 import { cn } from '@/src/lib/utils';
 
 type Mode =
@@ -34,24 +32,6 @@ export default function Login() {
     const to = (location.state as { from?: string } | null)?.from ?? '/';
     navigate(to, { replace: true });
   };
-
-  // Demo mode: lets the customer trial the app standalone without a
-  // backend deployment. Sets the demo flag + a placeholder token so the
-  // AuthContext rehydrates as the demo user on the next render.
-  function handleStartDemo() {
-    startDemoMode();
-    // Hard reload so AuthContext re-runs its hydration path and reads
-    // ``/auth/me`` from the demo short-circuit.
-    window.location.assign('/');
-  }
-
-  const [showApiSettings, setShowApiSettings] = useState(false);
-  const [apiUrl, setApiUrl] = useState(getApiBaseUrl());
-  function handleSaveApi() {
-    setApiBaseUrl(apiUrl.trim());
-    setInfo(`Server manzili saqlandi: ${apiUrl.trim() || '(default)'}`);
-    setShowApiSettings(false);
-  }
 
   function reset(next: Mode) {
     setFormError(null);
@@ -145,44 +125,13 @@ export default function Login() {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md bg-surface-container-lowest rounded-4xl shadow-xl p-8 space-y-6"
       >
-        <div className="relative flex flex-col items-center text-center space-y-2">
-          <button
-            onClick={() => setShowApiSettings(v => !v)}
-            className="absolute right-0 top-0 p-2 text-on-surface-variant hover:text-on-surface"
-            title="Server manzilini sozlash"
-            type="button"
-          >
-            <SettingsIcon size={18} />
-          </button>
+        <div className="flex flex-col items-center text-center space-y-2">
           <div className="w-14 h-14 rounded-3xl bg-primary/10 text-primary flex items-center justify-center">
             <GraduationCap size={28} />
           </div>
           <h1 className="text-2xl font-extrabold">Scholar Quest</h1>
           <p className="text-sm text-on-surface-variant">Talaba hisobingiz bilan kiring</p>
         </div>
-
-        {showApiSettings && (
-          <div className="space-y-2 rounded-2xl bg-surface-container-low p-4 border border-outline-variant/30">
-            <label className={labelCls}>Server (API) manzili</label>
-            <input
-              type="url"
-              value={apiUrl}
-              onChange={(e) => setApiUrl(e.target.value)}
-              placeholder="https://api.eduly.uz"
-              className={inputCls}
-            />
-            <p className="text-xs text-on-surface-variant">
-              Bo'sh qoldiring — mobil uchun standart sozlama ishlatiladi.
-            </p>
-            <button
-              type="button"
-              onClick={handleSaveApi}
-              className="w-full py-2 rounded-xl bg-primary text-on-primary font-bold text-sm"
-            >
-              Saqlash
-            </button>
-          </div>
-        )}
 
         {/* Tabs — only shown on the two main login modes. */}
         {(mode === 'email' || mode === 'phone') && (
@@ -357,22 +306,6 @@ export default function Login() {
           </form>
         )}
 
-        {/* Universal demo escape hatch — visible on every mode so a user
-            who can't log in (no backend, wrong creds, no internet) still
-            sees a working app. */}
-        <div className="pt-4 border-t border-outline-variant/20 text-center">
-          <p className="text-xs text-on-surface-variant mb-2">
-            Hisobingiz yo'qmi yoki internetga ulanmaganmisiz?
-          </p>
-          <button
-            type="button"
-            onClick={handleStartDemo}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-tertiary-container/30 text-on-surface text-sm font-bold hover:bg-tertiary-container/50 transition-all"
-          >
-            <Sparkles size={16} className="text-primary" />
-            Demo sifatida ko'rish
-          </button>
-        </div>
       </motion.div>
     </div>
   );

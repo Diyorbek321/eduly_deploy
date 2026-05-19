@@ -8,6 +8,7 @@ export interface Student {
   paid: number;
   isOverdue?: boolean;
   paymentDay?: number;
+  homeworkStrikes?: number;
   attendance: number;
   birthDate: string;
   gender: 'Erkak' | 'Ayol';
@@ -32,6 +33,8 @@ export interface Teacher {
   rating: number;
   salary: number;
   hourlyRate: number;
+  salaryPercent?: number;
+  basePerStudent?: number;
   bonus: number;
   avatar?: string;
   login?: string;
@@ -61,6 +64,7 @@ export interface Course {
   duration: string;
   price: string;
   lessonsCount: number;
+  maxDurationMonths: number | null;
   groupsCount: number;
   status: 'Faol' | 'Nofaol';
   description: string;

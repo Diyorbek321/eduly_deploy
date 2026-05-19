@@ -8,8 +8,8 @@ const devHost = process.env.DEV_HOST || '10.205.131.35';
 const devPort = process.env.DEV_PORT || '3001';
 
 const config: CapacitorConfig = {
-  appId: 'com.eduly.scholarquest',
-  appName: 'Scholar Quest',
+  appId: 'com.shanghai.school',
+  appName: 'Shanghai School',
   webDir: 'dist',
   server: {
     androidScheme: 'https',
@@ -22,6 +22,20 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: true,
+  },
+  ios: {
+    scheme: 'App',
+    // APNs push requires signing — set team ID in Xcode
+  },
+  plugins: {
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
+    SplashScreen: {
+      launchShowDuration: 2000,
+      backgroundColor: '#ec5b13',
+      showSpinner: false,
+    },
   },
 };
 

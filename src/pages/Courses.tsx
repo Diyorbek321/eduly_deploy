@@ -41,6 +41,7 @@ export const Courses = () => {
     name: '',
     duration: '',
     price: '',
+    maxDurationMonths: '',
     description: ''
   });
 
@@ -50,6 +51,7 @@ export const Courses = () => {
     duration: c.duration || '',
     price: c.price != null ? Number(c.price).toLocaleString() : '0',
     lessonsCount: c.lessons_count ?? 0,
+    maxDurationMonths: c.max_duration_months ?? null,
     groupsCount: c.groups_count ?? 0,
     status: c.status ?? 'Faol',
     description: c.description || ''
@@ -105,7 +107,7 @@ export const Courses = () => {
 
   const handleAddClick = () => {
     setEditingCourse(null);
-    setFormData({ name: '', duration: '', price: '', description: '' });
+    setFormData({ name: '', duration: '', price: '', maxDurationMonths: '', description: '' });
     setIsModalOpen(true);
   };
 
@@ -115,6 +117,7 @@ export const Courses = () => {
       name: course.name,
       duration: course.duration,
       price: course.price,
+      maxDurationMonths: course.maxDurationMonths != null ? String(course.maxDurationMonths) : '',
       description: course.description || ''
     });
     setIsModalOpen(true);
@@ -122,10 +125,12 @@ export const Courses = () => {
 
   const handleSave = async () => {
     try {
+      const maxMonths = parseInt(formData.maxDurationMonths, 10);
       const payload = {
         name: formData.name,
         duration: formData.duration,
         price: Number(formData.price.replace(/[^0-9]/g, '')) || 0,
+        max_duration_months: isNaN(maxMonths) || maxMonths <= 0 ? null : maxMonths,
         description: formData.description
       };
       if (editingCourse) {
@@ -354,24 +359,37 @@ export const Courses = () => {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs font-black text-slate-400 uppercase">Davomiyligi</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={formData.duration}
                 onChange={(e) => setFormData(prev => ({ ...prev, duration: e.target.value }))}
-                className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" 
-                placeholder="Masalan: 4 oy" 
+                className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm"
+                placeholder="Masalan: 4 oy"
               />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-black text-slate-400 uppercase">Narxi (oylik)</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={formData.price}
                 onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
-                className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" 
-                placeholder="Masalan: 500,000" 
+                className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm"
+                placeholder="Masalan: 500,000"
               />
             </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-black text-slate-400 uppercase">Maksimal muddat (oy)</label>
+            <input
+              type="number"
+              min="1"
+              max="60"
+              value={formData.maxDurationMonths}
+              onChange={(e) => setFormData(prev => ({ ...prev, maxDurationMonths: e.target.value }))}
+              className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm"
+              placeholder="Masalan: 6 (ixtiyoriy)"
+            />
+            <p className="text-[10px] text-slate-400">O'quvchi qo'shilganda maqsad sana avtomatik hisoblanadi</p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-black text-slate-400 uppercase">Tavsif</label>

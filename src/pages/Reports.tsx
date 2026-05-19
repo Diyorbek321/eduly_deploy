@@ -38,6 +38,9 @@ import {
 } from 'lucide-react';
 import { Header } from '@/src/components/Header';
 import api from '@/src/lib/api';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { useBranch } from '@/src/contexts/BranchContext';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -213,29 +216,48 @@ const ProgressRing = ({ percent, size = 56, strokeWidth = 5, color, children }) 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const Reports = () => {
+  const { activeBranch, isMultiBranch } = useBranch();
   const [stats, setStats] = useState(null);
   const [revenueChart, setRevenueChart] = useState(null);
   const [attendanceChart, setAttendanceChart] = useState(null);
   const [courseDistribution, setCourseDistribution] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hoveredKpi, setHoveredKpi] = useState(null);
-  const [selectedChart, setSelectedChart] = useState('area');
+  const [churnData, setChurnData] = useState<{ month: string; total_left: number; breakdown: Record<string, number> }[]>([]);
 
-  // ── Fetch Data (100% original API calls preserved) ──
+  // ── Fetch Data ──
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [statsRes, revenueRes, attendanceRes, groupsRes] = await Promise.all([
-          api.get('/dashboard/stats'),
+        let fetchedStats;
+        if (isMultiBranch && activeBranch) {
+          const branchRes = await api.get(`/branches/${activeBranch.id}/stats`);
+          const d = branchRes.data?.data ?? branchRes.data;
+          fetchedStats = {
+            total_students: d.total_students,
+            active_students: d.active_students,
+            total_teachers: d.total_teachers,
+            total_groups: d.total_groups,
+            total_revenue: d.total_revenue,
+            total_debt: d.total_debt,
+          };
+        } else {
+          const res = await api.get('/dashboard/stats');
+          fetchedStats = res.data;
+        }
+
+        const [revenueRes, attendanceRes, groupsRes, churnRes] = await Promise.all([
           api.get('/dashboard/revenue-chart', { params: { period: 'monthly' } }),
           api.get('/dashboard/attendance-chart', { params: { period: 'weekly' } }),
           api.get('/groups'),
+          api.get('/students/churn-report', { params: { months: 6 } }).catch(() => ({ data: [] })),
         ]);
-        setStats(statsRes.data);
+        setStats(fetchedStats);
         setRevenueChart(revenueRes.data);
         setAttendanceChart(attendanceRes.data);
+        setChurnData(churnRes.data || []);
 
         const courseMap = new Map();
         (groupsRes.data || []).forEach((g) => {
@@ -253,7 +275,7 @@ export const Reports = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [activeBranch, isMultiBranch]);
 
   // ── Derived Data ──
 
@@ -271,6 +293,80 @@ export const Reports = () => {
   const avgAttendance = attendanceData.length > 0
     ? Math.round(attendanceData.reduce((s, d) => s + d.count, 0) / attendanceData.length)
     : 0;
+
+  // ── PDF Export ──
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF();
+    const now = new Date().toLocaleDateString('uz-UZ');
+
+    doc.setFontSize(18);
+    doc.text('Hisobotlar', 14, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Sana: ${now}`, 14, 27);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['Korsatkich', 'Qiymat']],
+      body: [
+        ['Umumiy tushum (UZS)', (stats?.total_revenue ?? 0).toLocaleString()],
+        ['Faol oquvchilar', `${stats?.active_students ?? 0} / ${stats?.total_students ?? 0}`],
+        ['Guruhlar soni', String(stats?.total_groups ?? 0)],
+        ['Oqituvchilar soni', String(stats?.total_teachers ?? 0)],
+        ['Qarzdorlik (UZS)', (stats?.total_debt ?? 0).toLocaleString()],
+        ['Faollik darajasi', `${activeRate}%`],
+        ['Ortacha davomat', `${avgAttendance}%`],
+        ['Qarzdorlik nisbati', `${debtRate}%`],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [242, 101, 34] },
+    });
+
+    if (revenueData.length > 0) {
+      const lastY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFontSize(13);
+      doc.setTextColor(0);
+      doc.text('Oylik tushum dinamikasi', 14, lastY);
+      autoTable(doc, {
+        startY: lastY + 4,
+        head: [['Oy', 'Tushum (UZS)']],
+        body: revenueData.map((d) => [d.name, d.revenue.toLocaleString()]),
+        theme: 'grid',
+        headStyles: { fillColor: [124, 92, 252] },
+      });
+    }
+
+    if (attendanceData.length > 0) {
+      const lastY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFontSize(13);
+      doc.text('Haftalik davomat foizi', 14, lastY);
+      autoTable(doc, {
+        startY: lastY + 4,
+        head: [['Kun', 'Davomat (%)']],
+        body: attendanceData.map((d) => [d.name, `${d.count}%`]),
+        theme: 'grid',
+        headStyles: { fillColor: [16, 185, 129] },
+      });
+    }
+
+    if (courseDistribution.length > 0) {
+      const lastY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFontSize(13);
+      doc.text('Kurslar boyicha taqsimot', 14, lastY);
+      autoTable(doc, {
+        startY: lastY + 4,
+        head: [['Kurs', 'Oquvchilar', 'Foiz']],
+        body: courseDistribution.map((c) => {
+          const pct = totalCourseStudents > 0 ? Math.round((c.value / totalCourseStudents) * 100) : 0;
+          return [c.name, String(c.value), `${pct}%`];
+        }),
+        theme: 'grid',
+        headStyles: { fillColor: [251, 191, 36] },
+      });
+    }
+
+    doc.save(`hisobot_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
 
   // ── KPI Config ──
 
@@ -337,6 +433,16 @@ export const Reports = () => {
 
       {/* Accent Line */}
       <div className="h-[3px] w-full bg-gradient-to-r from-[#F26522] via-[#7C5CFC] to-[#10B981]" />
+
+      {/* Active branch banner */}
+      {isMultiBranch && activeBranch && (
+        <div className="px-4 sm:px-6 lg:px-8 pt-4">
+          <div className="flex items-center gap-2 text-sm text-slate-600 bg-orange-50 border border-orange-100 rounded-xl px-4 py-2 w-fit">
+            <span>📊</span>
+            <span>Ko'rsatilmoqda: <strong className="text-slate-900">{activeBranch.name}</strong></span>
+          </div>
+        </div>
+      )}
 
       {/* Inline Styles for Animations */}
       <style>{`
@@ -411,7 +517,7 @@ export const Reports = () => {
                 <Filter size={14} />
                 Filtr
               </button>
-              <button className="flex items-center gap-2 bg-gradient-to-r from-[#0c0c0f] to-[#1a1a2e] hover:from-[#1a1a2e] hover:to-[#0c0c0f] text-white px-5 py-2.5 rounded-xl font-bold transition-all text-sm active:scale-[0.97] shadow-xl shadow-black/10">
+              <button onClick={handleDownloadPDF} className="flex items-center gap-2 bg-gradient-to-r from-[#0c0c0f] to-[#1a1a2e] hover:from-[#1a1a2e] hover:to-[#0c0c0f] text-white px-5 py-2.5 rounded-xl font-bold transition-all text-sm active:scale-[0.97] shadow-xl shadow-black/10">
                 <Download size={14} />
                 PDF Yuklash
               </button>
@@ -856,6 +962,88 @@ export const Reports = () => {
                 </div>
               </StaggerItem>
             </div>
+
+            {/* ── Churn Analysis ── */}
+            {churnData.length > 0 && (() => {
+              const EXIT_LABELS: Record<string, string> = {
+                kochib_ketdi: "Ko'chib ketdi",
+                moliyaviy: 'Moliyaviy qiyinchilik',
+                sifat: "Sifatdan qoniqmadi",
+                tugatdi: 'Kursni tugatdi',
+                boshqa_markaz: 'Boshqa markaz',
+                sogliq: "Sog'liq",
+                vaqt: 'Vaqt yo\'qligi',
+                boshqa: 'Boshqa sabab',
+              };
+              const COLORS = ['#ec5b13','#f97316','#ef4444','#8b5cf6','#06b6d4','#10b981','#f59e0b','#64748b'];
+              const totalLeft = churnData.reduce((s, m) => s + m.total_left, 0);
+              // Aggregate all reason counts across months
+              const reasonTotals: Record<string, number> = {};
+              churnData.forEach(m => {
+                Object.entries(m.breakdown).forEach(([k, v]) => {
+                  reasonTotals[k] = (reasonTotals[k] || 0) + v;
+                });
+              });
+              const pieData = Object.entries(reasonTotals)
+                .sort((a, b) => b[1] - a[1])
+                .map(([key, value], i) => ({ name: EXIT_LABELS[key] || key, value, fill: COLORS[i % COLORS.length] }));
+              const barData = churnData.map(m => ({ month: m.month.slice(5), total: m.total_left }));
+
+              return (
+                <StaggerItem index={99}>
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                      <div>
+                        <h3 className="font-black text-slate-900 text-lg">Chiqib ketish tahlili</h3>
+                        <p className="text-sm text-slate-400 mt-0.5">Oxirgi 6 oy · jami {totalLeft} ta o'quvchi ketdi</p>
+                      </div>
+                      <div className="px-3 py-1.5 bg-rose-50 rounded-xl">
+                        <span className="text-xs font-black text-rose-600">Sabab: administratorlar kiritgan</span>
+                      </div>
+                    </div>
+                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+                      {/* Monthly bar chart */}
+                      <div>
+                        <p className="text-xs font-black text-slate-400 uppercase mb-3">Oylar bo'yicha</p>
+                        <BarChart data={barData} width={300} height={180} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="month" tick={{ fontSize: 11, fontWeight: 700 }} />
+                          <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                          <Tooltip formatter={(v) => [`${v} ta`, "Ketdi"]} />
+                          <Bar dataKey="total" fill="#ec5b13" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </div>
+                      {/* Reason breakdown */}
+                      <div>
+                        <p className="text-xs font-black text-slate-400 uppercase mb-3">Sabab bo'yicha</p>
+                        {pieData.length === 0 ? (
+                          <p className="text-sm text-slate-400 italic">Sabab kiritilmagan</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {pieData.map((item) => (
+                              <div key={item.name} className="flex items-center gap-3">
+                                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: item.fill }} />
+                                <span className="text-sm font-bold text-slate-700 flex-1">{item.name}</span>
+                                <span className="text-sm font-black text-slate-900">{item.value}</span>
+                                <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full"
+                                    style={{ width: `${Math.round((item.value / Math.max(totalLeft, 1)) * 100)}%`, background: item.fill }}
+                                  />
+                                </div>
+                                <span className="text-[10px] text-slate-400 w-8 text-right">
+                                  {Math.round((item.value / Math.max(totalLeft, 1)) * 100)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </StaggerItem>
+              );
+            })()}
           </>
         )}
       </main>

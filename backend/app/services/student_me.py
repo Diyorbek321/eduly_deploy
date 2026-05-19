@@ -9,14 +9,19 @@ from sqlalchemy.orm import Session
 from app.models.models import (
     Attendance,
     AttendanceStatus,
+    Homework,
+    HomeworkSubmission,
+    HomeworkSubmissionStatus,
     Payment,
     Student,
     StudentGroup,
     User,
 )
 from app.schemas.student_me import (
+    LearningPathItem,
     MyAttendanceItem,
     MyAttendanceOut,
+    MyLearningPathOut,
     MyPaymentItem,
     MyPaymentsOut,
     MyProfileOut,
@@ -38,6 +43,10 @@ def _require_student(db: Session, user: User) -> Student:
 def get_profile(db: Session, user: User) -> MyProfileOut:
     student = _require_student(db, user)
     group_names = [sg.group.name for sg in student.enrollments if sg.group]
+    homework_strikes = max(
+        (sg.homework_strikes or 0 for sg in student.enrollments),
+        default=0,
+    )
     return MyProfileOut(
         id=student.id,
         name=student.name,
@@ -52,6 +61,7 @@ def get_profile(db: Session, user: User) -> MyProfileOut:
         debt=student.debt,
         paid=student.paid,
         group_names=group_names,
+        homework_strikes=homework_strikes,
         created_at=student.created_at,
     )
 
@@ -206,3 +216,66 @@ def get_payments(
         total_paid=student.paid,
         current_debt=student.debt,
     )
+
+
+def get_learning_path(db: Session, user: User) -> MyLearningPathOut:
+    student = _require_student(db, user)
+    today = date.today()
+    items: list[LearningPathItem] = []
+
+    for sg in student.enrollments:
+        group = sg.group
+        if not group:
+            continue
+        course = group.course
+        enrolled_date = sg.enrolled_at.date() if sg.enrolled_at else today
+
+        max_months = course.max_duration_months if course else None
+        target = sg.target_completion_date
+
+        days_elapsed = max(0, (today - enrolled_date).days)
+        days_total = (target - enrolled_date).days if target else None
+        days_remaining = (target - today).days if target else None
+
+        time_progress_pct = 0.0
+        if days_total and days_total > 0:
+            time_progress_pct = round(min(100.0, days_elapsed / days_total * 100), 1)
+
+        hw_rows = (
+            db.query(HomeworkSubmission)
+            .join(Homework, Homework.id == HomeworkSubmission.homework_id)
+            .filter(
+                HomeworkSubmission.student_id == student.id,
+                Homework.group_id == group.id,
+            )
+            .all()
+        )
+        homework_total = len(hw_rows)
+        homework_done = sum(
+            1 for h in hw_rows if h.status == HomeworkSubmissionStatus.DONE
+        )
+        homework_pct = round(homework_done / homework_total * 100, 1) if homework_total else 0.0
+
+        is_behind = target is not None and homework_pct < time_progress_pct - 10
+
+        items.append(
+            LearningPathItem(
+                group_id=group.id,
+                group_name=group.name,
+                course_name=course.name if course else "",
+                teacher_name=group.teacher.name if group.teacher else "",
+                enrolled_at=enrolled_date,
+                max_duration_months=max_months,
+                target_completion_date=target,
+                days_elapsed=days_elapsed,
+                days_total=days_total,
+                days_remaining=days_remaining,
+                time_progress_pct=time_progress_pct,
+                homework_done=homework_done,
+                homework_total=homework_total,
+                homework_pct=homework_pct,
+                is_behind=is_behind,
+            )
+        )
+
+    return MyLearningPathOut(items=items, total=len(items))

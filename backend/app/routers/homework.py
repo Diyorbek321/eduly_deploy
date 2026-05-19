@@ -15,6 +15,7 @@ from app.models.models import (
     HomeworkSubmissionStatus,
     Student,
     StudentGroup,
+    StudentStatus,
     StudentWallet,
     Teacher,
     User,
@@ -112,6 +113,38 @@ def _to_out(db: Session, hw: Homework) -> HomeworkOut:
         done_count=done,
         pending_count=pending,
     )
+
+
+def _apply_strike(
+    db: Session,
+    student_id: int,
+    group_id: int,
+    new_status: HomeworkSubmissionStatus,
+) -> bool:
+    """Update homework_strikes on StudentGroup; return True if student was auto-removed."""
+    sg = (
+        db.query(StudentGroup)
+        .filter(
+            StudentGroup.student_id == student_id,
+            StudentGroup.group_id == group_id,
+        )
+        .first()
+    )
+    if sg is None:
+        return False
+
+    if new_status == HomeworkSubmissionStatus.NOT_DONE:
+        sg.homework_strikes = (sg.homework_strikes or 0) + 1
+        if sg.homework_strikes >= 3:
+            db.delete(sg)
+            student = db.query(Student).filter(Student.id == student_id).first()
+            if student:
+                student.status = StudentStatus.MUZLATILGAN
+            return True
+    else:
+        sg.homework_strikes = 0
+
+    return False
 
 
 def _credit_wallet(db: Session, student_id: int, center_id: int | None, coins: int) -> None:
@@ -346,6 +379,11 @@ def mark_submissions(
         if coins_now_credited:
             mark._credited = (sub.student_id, coins_now_credited)  # type: ignore[attr-defined]
 
+        # 3-strikes enforcement (runs after coin credit so the submission row exists).
+        auto_removed = _apply_strike(db, mark.student_id, hw.group_id, new_status)
+        if auto_removed:
+            mark._auto_removed = True  # type: ignore[attr-defined]
+
     db.commit()
 
     # Broadcast wallet updates so the admin "Hamyonlar" tab refreshes live.
@@ -361,6 +399,16 @@ def mark_submissions(
                     "delta": coins,
                     "reason": "homework",
                     "homework_id": hw.id,
+                },
+            )
+        if getattr(mark, "_auto_removed", False):
+            event_bus.publish_nowait(
+                "student.auto_removed",
+                center_id=hw.center_id,
+                payload={
+                    "student_id": mark.student_id,
+                    "group_id": hw.group_id,
+                    "reason": "homework_strikes",
                 },
             )
 

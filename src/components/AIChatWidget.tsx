@@ -201,12 +201,13 @@ Markdown formatidan foydalanib, ma'lumotlarni chiroyli ko'rinishda taqdim eting 
         role: 'model', 
         content: response.text || 'Kechirasiz, javob qaytarishda xatolik yuz berdi.' 
       }]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Chat error:", error);
-      setMessages(prev => [...prev, { 
-        id: Date.now().toString(), 
-        role: 'model', 
-        content: 'Kechirasiz, tizimda xatolik yuz berdi. Iltimos, keyinroq qayta urinib ko\'ring.' 
+      const errMsg = error?.message || error?.toString() || 'Noma\'lum xato';
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'model',
+        content: `Xatolik: ${errMsg}`
       }]);
     } finally {
       setIsLoading(false);

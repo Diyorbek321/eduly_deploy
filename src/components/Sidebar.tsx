@@ -18,10 +18,18 @@ import {
   LifeBuoy,
   MessageSquare,
   MessageCircle,
+  Trophy,
   LogOut,
   FileText,
   User,
-  X
+  X,
+  Building2,
+  UserPlus,
+  Kanban as KanbanIcon,
+  ShieldCheck,
+  Globe,
+  BarChart2,
+  Brain,
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useAuth } from '@/src/contexts/AuthContext';
@@ -31,8 +39,9 @@ import { useSettings } from '@/src/contexts/SettingsContext';
 const adminNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Users, label: "O‘quvchilar", path: "/students" },
-  { icon: GraduationCap, label: "O‘qituvchilar", path: "/teachers" },
-  { icon: LifeBuoy, label: "Support O‘qituvchilar", path: "/support-teachers" },
+  { icon: GraduationCap, label: "O’qituvchilar", path: "/teachers" },
+  { icon: Trophy, label: "O’qituvchi reytingi", path: "/teacher-leaderboard" },
+  { icon: LifeBuoy, label: "Support O’qituvchilar", path: "/support-teachers" },
   { icon: Layers, label: "Guruhlar", path: "/groups" },
   { icon: BookOpen, label: "Kurslar", path: "/courses" },
   { icon: CalendarCheck, label: "Davomat", path: "/attendance" },
@@ -42,7 +51,15 @@ const adminNavItems = [
   { icon: MessageCircle, label: "Guruh Chatlari", path: "/chat" },
   { icon: MessageSquare, label: "SMS Xabarnoma", path: "/sms" },
   { icon: Gift, label: "Gamifikatsiya", path: "/gamification" },
+  { icon: FileText, label: "Kutubxona", path: "/library" },
   { icon: BarChart3, label: "Hisobotlar", path: "/reports" },
+  { icon: UserPlus, label: "CRM", path: "/crm" },
+  { icon: ShieldCheck, label: "Menejerlar", path: "/branch-managers" },
+  { icon: KanbanIcon, label: "Kanban", path: "/kanban" },
+  { icon: Building2, label: "Filiallar", path: "/branches" },
+  { icon: Globe, label: "Veb-sayt", path: "/website" },
+  { icon: BarChart2, label: "So'rovnomalar", path: "/polls" },
+  { icon: Brain, label: "Kurs Modullari", path: "/course-modules" },
 ];
 
 // Teacher sidebar items

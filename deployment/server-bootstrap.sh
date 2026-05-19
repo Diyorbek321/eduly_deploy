@@ -11,7 +11,7 @@
 set -euo pipefail
 
 DOMAIN="${DOMAIN:?set DOMAIN=eduly.uz}"
-EMAIL="${EMAIL:?set EMAIL=you@eduly.uz (for Let's Encrypt)}"
+EMAIL="${EMAIL:?set EMAIL=you@eduly.uz for Lets Encrypt}"
 DB_PASSWORD="${DB_PASSWORD:?set DB_PASSWORD=...}"
 
 echo "── 1/8  System packages"

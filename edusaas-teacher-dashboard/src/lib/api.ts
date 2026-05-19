@@ -28,6 +28,16 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
+    if (error.response?.status === 401) {
+      const currentPath = window.location.pathname;
+      const base = ((import.meta as any).env?.BASE_URL ?? '/').replace(/\/+$/, '/');
+      const loginPath = `${base === '/' ? '' : base}login`.replace(/\/+/g, '/') || '/login';
+      if (!currentPath.endsWith('/login')) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = loginPath.startsWith('/') ? loginPath : `/${loginPath}`;
+      }
+    }
     const msg = error.response?.data?.error?.message
       || error.response?.data?.detail
       || error.message;

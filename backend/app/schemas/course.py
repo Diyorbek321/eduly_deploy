@@ -12,6 +12,7 @@ class CourseCreate(BaseModel):
     price: float
     duration: str | None = None
     lessons_count: int = 0
+    max_duration_months: int | None = None
     description: str | None = None
     status: CourseStatus = CourseStatus.FAOL
 
@@ -21,6 +22,7 @@ class CourseUpdate(BaseModel):
     price: float | None = None
     duration: str | None = None
     lessons_count: int | None = None
+    max_duration_months: int | None = None
     description: str | None = None
     status: CourseStatus | None = None
 
@@ -31,6 +33,7 @@ class CourseOut(BaseModel):
     duration: str | None = None
     price: float
     lessons_count: int
+    max_duration_months: int | None = None
     groups_count: int = 0
     status: CourseStatus
     description: str | None = None

@@ -1,14 +1,14 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.eduly.scholarquest"
+    namespace "com.shanghai.school"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.eduly.scholarquest"
+        applicationId "com.shanghai.school"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -20,6 +20,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Sign release APK with debug keystore so side-loaded installs
+            // succeed. Replace with a real release keystore before publishing.
+            signingConfig signingConfigs.debug
         }
     }
 }

@@ -13,6 +13,12 @@ import {
   Snowflake,
   Sun,
   X,
+  Phone,
+  PhoneCall,
+  UserX,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react';
 import { Header } from '@/src/components/Header';
 import { cn, getPaymentStatus, PAYMENT_STATUS_META, PaymentStatus } from '@/src/lib/utils';
@@ -28,8 +34,192 @@ import * as XLSX from 'xlsx';
 
 type StatusFilter = '' | 'Faol' | 'Muzlatilgan' | 'Kutishda' | 'Ketgan';
 type DebtFilter = '' | 'paid' | 'unpaid' | 'partial';
+type ActiveTab = 'all' | 'exited';
 
 const SEARCH_DEBOUNCE_MS = 300;
+
+// ── ExitedTab sub-component ───────────────────────────────────────────────────
+
+function ExitedTab({
+  list,
+  loading,
+  onOpenCallModal,
+  navigate,
+}: {
+  list: ExitedStudent[];
+  loading: boolean;
+  onOpenCallModal: (s: ExitedStudent) => void;
+  navigate: (path: string) => void;
+}) {
+  const notCalled = list.filter(s => !s.exit_called);
+  const called = list.filter(s => s.exit_called);
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center text-slate-400 font-bold">
+        Yuklanmoqda...
+      </div>
+    );
+  }
+
+  if (list.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center space-y-2">
+        <UserX className="mx-auto text-slate-300" size={40} />
+        <p className="font-bold text-slate-400">Ketgan o'quvchilar yo'q</p>
+      </div>
+    );
+  }
+
+  const ExitRow = ({ s }: { s: ExitedStudent }) => {
+    const reasonLabel = EXIT_REASONS.find(r => r.value === s.exit_reason)?.label;
+    return (
+      <tr key={s.id} className="hover:bg-slate-50/50 transition-colors group">
+        <td className="px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "size-9 rounded-full flex items-center justify-center text-xs font-black",
+              s.gender === 'Erkak' ? "bg-blue-100 text-blue-600" : "bg-rose-100 text-rose-600"
+            )}>
+              {s.name.split(' ').map((n: string) => n[0]).join('')}
+            </div>
+            <div>
+              <p className="font-bold text-sm text-slate-900">{s.name}</p>
+              <p className="text-xs text-slate-400">{s.phone}</p>
+            </div>
+          </div>
+        </td>
+        <td className="px-5 py-4 text-sm text-slate-500 font-medium">{s.group || '—'}</td>
+        <td className="px-5 py-4 text-xs text-slate-400 font-medium">{s.exit_date ? s.exit_date.slice(0, 10) : '—'}</td>
+        <td className="px-5 py-4">
+          {s.exit_called ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-black uppercase">
+              <CheckCircle2 size={11} /> Qo'ng'iroq qilindi
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-100 text-rose-600 rounded-full text-[10px] font-black uppercase">
+              <Clock size={11} /> Kutilmoqda
+            </span>
+          )}
+        </td>
+        <td className="px-5 py-4">
+          {reasonLabel ? (
+            <div>
+              <span className="text-xs font-bold text-slate-700">{reasonLabel}</span>
+              {s.exit_reason_note && (
+                <p className="text-[11px] text-slate-400 mt-0.5 max-w-[200px] truncate" title={s.exit_reason_note}>
+                  "{s.exit_reason_note}"
+                </p>
+              )}
+            </div>
+          ) : (
+            <span className="text-xs text-slate-300 font-medium italic">Sabab kiritilmagan</span>
+          )}
+        </td>
+        <td className="px-5 py-4 text-right">
+          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => onOpenCallModal(s)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all",
+                s.exit_called
+                  ? "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                  : "bg-[#ec5b13] text-white hover:bg-orange-600 shadow-md shadow-orange-200"
+              )}
+            >
+              <PhoneCall size={13} />
+              {s.exit_called ? 'Yangilash' : "Qo'ng'iroq qildim"}
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {notCalled.length > 0 && (
+        <div className="bg-white rounded-2xl border border-rose-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 bg-rose-50 border-b border-rose-100 flex items-center gap-2">
+            <AlertTriangle size={15} className="text-rose-500" />
+            <span className="text-xs font-black text-rose-600 uppercase tracking-wider">
+              Qo'ng'iroq kutilmoqda — {notCalled.length} ta o'quvchi
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50">
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">Ism</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">Guruh</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">Ketgan sana</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">Holat</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">Sabab</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {notCalled.map(s => <ExitRow key={s.id} s={s} />)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {called.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
+            <CheckCircle2 size={15} className="text-emerald-500" />
+            <span className="text-xs font-black text-slate-400 uppercase tracking-wider">
+              Qo'ng'iroq qilingan — {called.length} ta
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">Ism</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">Guruh</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">Ketgan sana</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">Holat</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">Sabab</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {called.map(s => <ExitRow key={s.id} s={s} />)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const EXIT_REASONS = [
+  { value: 'kochib_ketdi',  label: "Ko'chib ketdi" },
+  { value: 'moliyaviy',     label: 'Moliyaviy qiyinchilik' },
+  { value: 'sifat',         label: "Sifatdan qoniqmadi" },
+  { value: 'tugatdi',       label: 'Kursni tugatdi' },
+  { value: 'boshqa_markaz', label: 'Boshqa markaz tanladi' },
+  { value: 'sogliq',        label: "Sog'liq muammosi" },
+  { value: 'vaqt',          label: 'Vaqt topa olmadi' },
+  { value: 'boshqa',        label: 'Boshqa sabab' },
+] as const;
+
+interface ExitedStudent {
+  id: string;
+  name: string;
+  phone: string;
+  group: string;
+  exit_date: string | null;
+  exit_called: boolean;
+  exit_called_at: string | null;
+  exit_reason: string | null;
+  exit_reason_note: string | null;
+  gender: string;
+}
 
 const mapStudent = (s: Record<string, unknown>): Student => ({
   id: String(s.id),
@@ -48,6 +238,7 @@ const mapStudent = (s: Record<string, unknown>): Student => ({
   parentName: (s.parent_name as string) || '',
   parentPhone: (s.parent_phone as string) || '',
   avatar: (s.avatar as string) || undefined,
+  homeworkStrikes: (s.homework_strikes as number) ?? 0,
 });
 
 export const Students = () => {
@@ -70,6 +261,14 @@ export const Students = () => {
 
   const [studentToFreeze, setStudentToFreeze] = useState<Student | null>(null);
   const [isFreezeSubmitting, setIsFreezeSubmitting] = useState(false);
+
+  // Exited students tab
+  const [activeTab, setActiveTab] = useState<ActiveTab>('all');
+  const [exitedList, setExitedList] = useState<ExitedStudent[]>([]);
+  const [exitedLoading, setExitedLoading] = useState(false);
+  const [exitCallModal, setExitCallModal] = useState<ExitedStudent | null>(null);
+  const [exitForm, setExitForm] = useState({ reason: 'boshqa', note: '' });
+  const [exitSubmitting, setExitSubmitting] = useState(false);
 
   const page = parseInt(searchParams.get('page') || '1', 10);
   const searchQuery = searchParams.get('search') || '';
@@ -134,6 +333,47 @@ export const Students = () => {
     }
   };
 
+  const fetchExited = async () => {
+    setExitedLoading(true);
+    try {
+      const res = await api.get('/students/exited');
+      setExitedList((res.data || []).map((s: any) => ({
+        id: String(s.id),
+        name: s.name,
+        phone: s.phone,
+        group: (s.group_names || []).join(', '),
+        exit_date: s.exit_date || null,
+        exit_called: s.exit_called ?? false,
+        exit_called_at: s.exit_called_at || null,
+        exit_reason: s.exit_reason || null,
+        exit_reason_note: s.exit_reason_note || null,
+        gender: s.gender || 'Erkak',
+      })));
+    } catch {
+      // intercepted
+    } finally {
+      setExitedLoading(false);
+    }
+  };
+
+  const handleSaveExitInfo = async () => {
+    if (!exitCallModal) return;
+    setExitSubmitting(true);
+    try {
+      await api.put(`/students/${exitCallModal.id}/exit-info`, {
+        exit_reason: exitForm.reason,
+        exit_reason_note: exitForm.note || null,
+      });
+      await fetchExited();
+      setExitCallModal(null);
+      setExitForm({ reason: 'boshqa', note: '' });
+    } catch {
+      // intercepted
+    } finally {
+      setExitSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     fetchStudents();
   }, [page, searchQuery, statusFilter, groupFilter, debtFilter]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -141,6 +381,10 @@ export const Students = () => {
   useEffect(() => {
     fetchGroupOptions();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'exited') fetchExited();
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -331,8 +575,45 @@ export const Students = () => {
           </div>
         </div>
 
-        {/* Search and Filters */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        {/* Tabs */}
+        <div className="flex gap-1 p-1 bg-slate-100 rounded-2xl w-fit">
+          <button
+            onClick={() => setActiveTab('all')}
+            className={cn(
+              "px-5 py-2.5 rounded-xl text-sm font-bold transition-all",
+              activeTab === 'all' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            Barcha o'quvchilar
+          </button>
+          <button
+            onClick={() => setActiveTab('exited')}
+            className={cn(
+              "flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all",
+              activeTab === 'exited' ? "bg-white text-rose-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            <UserX size={15} />
+            Ketganlar
+            {exitedList.filter(s => !s.exit_called).length > 0 && (
+              <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                {exitedList.filter(s => !s.exit_called).length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Search and Filters — only for main tab */}
+        {activeTab === 'exited' ? (
+          <ExitedTab
+            list={exitedList}
+            loading={exitedLoading}
+            onOpenCallModal={(s) => { setExitCallModal(s); setExitForm({ reason: s.exit_reason || 'boshqa', note: s.exit_reason_note || '' }); }}
+            navigate={navigate}
+          />
+        ) : null}
+
+        {activeTab === 'all' && (<><div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative group">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#ec5b13] transition-colors" size={20} />
@@ -358,7 +639,7 @@ export const Students = () => {
           <div className="flex flex-wrap gap-3">
             <select
               value={statusFilter}
-              onChange={(e) => updateParam('status', e.target.value)}
+              onChange={(e) => { updateParam('status', e.target.value); }}
               className="bg-slate-50 border-none rounded-xl px-4 py-2 text-sm font-bold text-slate-600 focus:ring-2 focus:ring-orange-500/20 cursor-pointer outline-none"
             >
               <option value="">Barcha holatlar</option>
@@ -440,6 +721,16 @@ export const Students = () => {
                               </div>
                             )}
                             <span className="font-bold text-sm text-slate-900 group-hover:text-[#ec5b13]">{s.name}</span>
+                            {(s.homeworkStrikes ?? 0) > 0 && (
+                              <span className={cn(
+                                "ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black",
+                                (s.homeworkStrikes ?? 0) >= 3
+                                  ? "bg-red-100 text-red-600"
+                                  : "bg-amber-100 text-amber-600"
+                              )}>
+                                {s.homeworkStrikes}⚡
+                              </span>
+                            )}
                           </button>
                         </td>
                         <td className="px-6 py-4 text-sm font-medium text-slate-500">{s.phone}</td>
@@ -558,8 +849,70 @@ export const Students = () => {
               </div>
             </div>
           </div>
-        )}
+        )}</>)}
       </main>
+
+      {/* Exit call modal */}
+      <Modal
+        isOpen={Boolean(exitCallModal)}
+        onClose={() => !exitSubmitting && setExitCallModal(null)}
+        title="Qo'ng'iroq natijalari"
+        footer={
+          <>
+            <button
+              onClick={() => setExitCallModal(null)}
+              disabled={exitSubmitting}
+              className="flex-1 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-70"
+            >
+              Bekor qilish
+            </button>
+            <button
+              onClick={handleSaveExitInfo}
+              disabled={exitSubmitting}
+              className="flex-1 py-3 bg-[#ec5b13] text-white rounded-2xl text-sm font-bold hover:bg-orange-600 disabled:opacity-70 shadow-lg shadow-orange-200"
+            >
+              {exitSubmitting ? 'Saqlanmoqda...' : 'Saqlash'}
+            </button>
+          </>
+        }
+      >
+        {exitCallModal && (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+              <div className="size-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-sm">
+                {exitCallModal.name.split(' ').map((n: string) => n[0]).join('')}
+              </div>
+              <div>
+                <p className="font-bold text-slate-900 text-sm">{exitCallModal.name}</p>
+                <p className="text-xs text-slate-500">{exitCallModal.phone} · {exitCallModal.group || 'Guruhsiz'}</p>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-black text-slate-400 uppercase">Ketish sababi</label>
+              <select
+                value={exitForm.reason}
+                onChange={(e) => setExitForm(prev => ({ ...prev, reason: e.target.value }))}
+                className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm cursor-pointer"
+              >
+                {EXIT_REASONS.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-black text-slate-400 uppercase">O'quvchi aynan nima dedi?</label>
+              <textarea
+                value={exitForm.note}
+                onChange={(e) => setExitForm(prev => ({ ...prev, note: e.target.value }))}
+                rows={4}
+                placeholder="Masalan: 'Toshkentga ko'chib ketdik, endi yaqin markaz yo'q' ..."
+                className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm resize-none"
+              />
+              <p className="text-[10px] text-slate-400">Imkon qadar aniq yozing — bu ma'lumotlar tahlilga yordam beradi</p>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <StudentFormModal
         isOpen={isModalOpen}

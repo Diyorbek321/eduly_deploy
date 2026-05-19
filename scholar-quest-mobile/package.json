@@ -12,12 +12,14 @@
     "cap:sync": "npm run build && npx cap sync",
     "cap:android": "npm run build && npx cap sync android && npx cap open android",
     "cap:run:android": "npm run build && npx cap run android",
+    "cap:ios": "npm run build && npx cap sync ios && npx cap open ios",
     "live:sync": "LIVE_RELOAD=1 npx cap sync android",
     "live:apk": "LIVE_RELOAD=1 npx cap sync android && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",
     "@capacitor/app": "^8.1.0",
+    "@capacitor/ios": "^8.3.1",
     "@capacitor/core": "^8.3.1",
     "@capacitor/haptics": "^8.0.2",
     "@capacitor/push-notifications": "^8.0.3",

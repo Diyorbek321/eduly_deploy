@@ -34,6 +34,7 @@ export interface MyProfile {
   debt: number;
   paid: number;
   group_names: string[];
+  homework_strikes: number;
   created_at: string | null;
 }
 
@@ -97,4 +98,40 @@ export interface MyPayments {
   pages: number;
   total_paid: number;
   current_debt: number;
+}
+
+export interface MaterialItem {
+  id: number;
+  group_id: number;
+  group_name: string;
+  title: string;
+  description: string | null;
+  file_url: string;
+  file_name: string;
+  file_type: 'pdf' | 'video' | 'image' | 'doc' | 'other';
+  file_size: number | null;
+  created_at: string | null;
+}
+
+export interface LearningPathItem {
+  group_id: number;
+  group_name: string;
+  course_name: string;
+  teacher_name: string;
+  enrolled_at: string;
+  max_duration_months: number | null;
+  target_completion_date: string | null;
+  days_elapsed: number;
+  days_total: number | null;
+  days_remaining: number | null;
+  time_progress_pct: number;
+  homework_done: number;
+  homework_total: number;
+  homework_pct: number;
+  is_behind: boolean;
+}
+
+export interface MyLearningPath {
+  items: LearningPathItem[];
+  total: number;
 }

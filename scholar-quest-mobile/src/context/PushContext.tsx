@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { isNativePlatform } from '../lib/platform';
 import { api } from '../lib/api';
 import { useAuth } from './AuthContext';
@@ -13,6 +14,14 @@ interface PushContextValue {
 }
 
 const PushContext = createContext<PushContextValue | undefined>(undefined);
+
+// Push registration requires a Firebase google-services.json. Without it,
+// PushNotifications.register() throws a native FirebaseMessaging error that
+// bypasses JS try/catch and crashes the app. Gate registration behind an
+// explicit env flag — set VITE_PUSH_ENABLED=1 only when Firebase is wired up.
+const PUSH_ENABLED =
+  (import.meta as unknown as { env?: Record<string, string> }).env
+    ?.VITE_PUSH_ENABLED === '1';
 
 async function registerTokenWithBackend(token: string, platform: string): Promise<void> {
   try {
@@ -31,7 +40,7 @@ export function PushProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   async function requestPermission() {
-    if (!isNativePlatform()) {
+    if (!isNativePlatform() || !PUSH_ENABLED) {
       setPermission('unsupported');
       return;
     }
@@ -50,13 +59,13 @@ export function PushProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    if (!isNativePlatform() || !user) return;
+    if (!isNativePlatform() || !user || !PUSH_ENABLED) return;
     let removeListeners: Array<() => void> = [];
     (async () => {
       const { PushNotifications } = await import('@capacitor/push-notifications');
       const registration = await PushNotifications.addListener('registration', (t) => {
         setToken(t.value);
-        void registerTokenWithBackend(t.value, 'android');
+        void registerTokenWithBackend(t.value, Capacitor.getPlatform());
       });
       const regError = await PushNotifications.addListener('registrationError', (err) => {
         setError(String(err.error ?? 'Unknown registration error'));

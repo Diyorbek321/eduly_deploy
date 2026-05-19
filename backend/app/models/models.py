@@ -231,6 +231,12 @@ class Student(Base):
     paid = Column(Float, default=0)
     payment_day = Column(Integer, nullable=True)  # day-of-month when monthly fee is due
     sms_opt_in = Column(Boolean, nullable=False, default=True)
+    # Exit tracking — filled by admin after calling the student
+    exit_reason = Column(String(100), nullable=True)
+    exit_reason_note = Column(Text, nullable=True)
+    exit_date = Column(Date, nullable=True)
+    exit_called = Column(Boolean, nullable=False, default=False)
+    exit_called_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -261,6 +267,7 @@ class Teacher(Base):
     status = Column(Enum(TeacherStatus), nullable=False, default=TeacherStatus.FAOL)
     hourly_rate = Column(Float, default=0)
     salary_percent = Column(Float, default=40)
+    base_per_student = Column(Integer, default=120000)
     avatar = Column(String(500), nullable=True)
     experience = Column(String(100), nullable=True)
     birth_date = Column(Date, nullable=True)
@@ -272,6 +279,8 @@ class Teacher(Base):
     user = relationship("User", back_populates="teacher")
     groups = relationship("Group", back_populates="teacher")
     salaries = relationship("Salary", back_populates="teacher", cascade="all, delete-orphan")
+    kpi_records = relationship("TeacherKPI", back_populates="teacher", cascade="all, delete-orphan")
+    badges = relationship("TeacherBadge", back_populates="teacher", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_teachers_name", "name"),
@@ -292,6 +301,7 @@ class Course(Base):
     duration = Column(String(100), nullable=True)
     price = Column(Float, nullable=False)
     lessons_count = Column(Integer, default=0)
+    max_duration_months = Column(Integer, nullable=True)
     status = Column(Enum(CourseStatus), nullable=False, default=CourseStatus.FAOL)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -347,6 +357,9 @@ class StudentGroup(Base):
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
     group_id = Column(Integer, ForeignKey("groups.id"), nullable=False)
     enrolled_at = Column(DateTime, default=datetime.utcnow)
+    target_completion_date = Column(Date, nullable=True)
+    # Consecutive NOT_DONE homework count; resets to 0 on DONE. At 3 → auto-remove.
+    homework_strikes = Column(Integer, nullable=False, default=0)
 
     student = relationship("Student", back_populates="enrollments")
     group = relationship("Group", back_populates="enrollments")
@@ -443,8 +456,9 @@ class Salary(Base):
     total_hours = Column(Float, default=0)
     total_amount = Column(Float, nullable=False)
     period = Column(Integer, nullable=True)        # 1 = days 1-14, 2 = days 15-end
-    percent_used = Column(Float, nullable=True)    # snapshot of salary_percent at calc time
+    percent_used = Column(Float, nullable=True)    # kept for legacy; unused in new formula
     payments_total = Column(Float, nullable=True)  # total student payments used in calc
+    calculation_detail = Column(Text, nullable=True)  # JSON: per-student breakdown snapshot
     is_paid = Column(Boolean, default=False)
     paid_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -762,4 +776,463 @@ class AuditLog(Base):
         Index("ix_audit_action", "action"),
         Index("ix_audit_target", "target_type", "target_id"),
         Index("ix_audit_created", "created_at"),
+    )
+
+
+# ─── Teacher KPI ──────────────────────────────────────────────────────────────
+
+
+class TeacherKPI(Base):
+    __tablename__ = "teacher_kpis"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id", ondelete="CASCADE"), nullable=False)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=True, index=True)
+    month = Column(String(7), nullable=False)  # YYYY-MM
+
+    retention_score = Column(Float, default=0)   # 0–30
+    homework_score = Column(Float, default=0)    # 0–25
+    attendance_score = Column(Float, default=0)  # 0–25
+    payment_score = Column(Float, default=0)     # 0–20
+    total_score = Column(Float, default=0)       # 0–100
+
+    bonus_tier = Column(String(20), nullable=True)   # platinum|gold|silver|none
+    bonus_percent = Column(Float, default=0)          # 20|12|6|0
+
+    student_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    teacher = relationship("Teacher", back_populates="kpi_records")
+
+    __table_args__ = (
+        Index("ix_kpi_teacher_month", "teacher_id", "month", unique=True),
+    )
+
+
+# ─── Teacher Badges ───────────────────────────────────────────────────────────
+
+
+class TeacherBadge(Base):
+    __tablename__ = "teacher_badges"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id", ondelete="CASCADE"), nullable=False)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=True, index=True)
+    badge_type = Column(String(50), nullable=False)
+    awarded_at = Column(DateTime, default=datetime.utcnow)
+    description = Column(String(300), nullable=True)
+
+    teacher = relationship("Teacher", back_populates="badges")
+
+    __table_args__ = (
+        Index("ix_badge_teacher", "teacher_id"),
+        Index("ix_badge_unique", "teacher_id", "badge_type", unique=True),
+    )
+
+
+# ─── Monthly Invoices ─────────────────────────────────────────────────────────
+
+
+class MonthlyInvoice(Base):
+    """Auto-generated monthly bill per student (created on 1st of month).
+
+    ``amount_due`` is the sum of course prices across all active group enrollments.
+    ``is_paid`` is set to True when payments for the month meet or exceed the due amount.
+    Rows are idempotent — re-running the generation job for the same month is safe.
+    """
+
+    __tablename__ = "monthly_invoices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    month = Column(String(7), nullable=False)  # YYYY-MM
+    amount_due = Column(Float, nullable=False)
+    amount_paid = Column(Float, nullable=False, default=0)
+    is_paid = Column(Boolean, nullable=False, default=False)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    paid_at = Column(DateTime, nullable=True)
+
+    student = relationship("Student")
+
+    __table_args__ = (
+        Index("ix_mi_student_month", "student_id", "month", unique=True),
+        Index("ix_mi_center_month", "center_id", "month"),
+        Index("ix_mi_is_paid", "is_paid"),
+    )
+
+
+# ─── Website Content ─────────────────────────────────────────────────────────
+
+
+class WebsiteCourse(Base):
+    __tablename__ = "website_courses"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=True, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    duration = Column(String(100), nullable=True)    # e.g. "6 oy"
+    price = Column(String(100), nullable=True)        # display string e.g. "800,000 UZS/oy"
+    icon = Column(String(50), nullable=True)          # emoji or lucide icon name
+    color = Column(String(20), nullable=False, default="#6366f1")
+    position = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class WebsiteFAQ(Base):
+    __tablename__ = "website_faqs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=True, index=True)
+    question = Column(String(500), nullable=False)
+    answer = Column(Text, nullable=False)
+    position = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WebsiteBranch(Base):
+    __tablename__ = "website_branches"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=True, index=True)
+    name = Column(String(200), nullable=False)
+    address = Column(String(500), nullable=False)
+    phone = Column(String(50), nullable=True)
+    working_hours = Column(String(200), nullable=True)    # e.g. "Du-Sha 9:00-19:00"
+    lat = Column(Float, nullable=True)                     # latitude
+    lng = Column(Float, nullable=True)                     # longitude
+    position = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ─── Course Modules & Daily Quests ───────────────────────────────────────────
+
+
+class CourseModule(Base):
+    """A level/stage within a course (e.g. Beginner, Pre-Intermediate)."""
+
+    __tablename__ = "course_modules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    course_id = Column(Integer, ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(200), nullable=False)          # e.g. "Beginner"
+    level_order = Column(Integer, nullable=False, default=1)  # 1=lowest
+    description = Column(Text, nullable=True)
+    ai_prompt_hint = Column(String(500), nullable=True)  # optional extra context for AI
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    course = relationship("Course")
+    enrollments = relationship("StudentModuleEnrollment", back_populates="module", cascade="all, delete-orphan")
+    daily_quests = relationship("DailyQuest", back_populates="module", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_cm_course", "course_id"),
+        Index("ix_cm_course_order", "course_id", "level_order"),
+    )
+
+
+class StudentModuleEnrollment(Base):
+    """Tracks which module a student is currently in for a given course.
+
+    Unique on (student_id, course_id) — one active module per student per course.
+    Auto-created / updated when a student is added to a group whose level matches
+    a CourseModule name.
+    """
+
+    __tablename__ = "student_module_enrollments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    module_id = Column(Integer, ForeignKey("course_modules.id", ondelete="CASCADE"), nullable=False)
+    enrolled_at = Column(DateTime, default=datetime.utcnow)
+
+    student = relationship("Student")
+    module = relationship("CourseModule", back_populates="enrollments")
+
+    __table_args__ = (
+        Index("ix_sme_student", "student_id"),
+        Index("ix_sme_module", "module_id"),
+        # Uniqueness enforced via application logic (upsert) — one module per course per student.
+    )
+
+
+class DailyQuest(Base):
+    """One set of 10 AI-generated questions per module per calendar day.
+
+    Shared across all students in the same module — generated once at 00:00 by
+    the scheduler. ``questions`` is a JSON array of question objects.
+    """
+
+    __tablename__ = "daily_quests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    module_id = Column(Integer, ForeignKey("course_modules.id", ondelete="CASCADE"), nullable=False)
+    date = Column(String(10), nullable=False)           # YYYY-MM-DD
+    questions = Column(Text, nullable=False)            # JSON array of 10 question objects
+    generated_at = Column(DateTime, default=datetime.utcnow)
+
+    module = relationship("CourseModule", back_populates="daily_quests")
+    attempts = relationship("DailyQuestAttempt", back_populates="quest", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_dq_module_date", "module_id", "date", unique=True),
+    )
+
+
+class DailyQuestAttempt(Base):
+    """A student's completed attempt at a DailyQuest.
+
+    One attempt per student per quest. Score ≥ 9 triggers an automatic +5 coins reward.
+    """
+
+    __tablename__ = "daily_quest_attempts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    quest_id = Column(Integer, ForeignKey("daily_quests.id", ondelete="CASCADE"), nullable=False)
+    answers = Column(Text, nullable=False)     # JSON: {"0": "A: ...", "1": "True", ...}
+    score = Column(Integer, nullable=False)    # 0-10
+    completed_at = Column(DateTime, default=datetime.utcnow)
+    coins_awarded = Column(Boolean, nullable=False, default=False)
+
+    student = relationship("Student")
+    quest = relationship("DailyQuest", back_populates="attempts")
+
+    __table_args__ = (
+        Index("ix_dqa_student_quest", "student_id", "quest_id", unique=True),
+        Index("ix_dqa_student", "student_id"),
+    )
+
+
+# ─── Polls ───────────────────────────────────────────────────────────────────
+
+
+class Poll(Base):
+    __tablename__ = "polls"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=True, index=True)
+    title = Column(String(300), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, default="active")  # draft | active | closed
+    target_group_id = Column(Integer, ForeignKey("groups.id", ondelete="SET NULL"), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    ends_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    options = relationship("PollOption", back_populates="poll", cascade="all, delete-orphan", order_by="PollOption.position")
+    responses = relationship("PollResponse", back_populates="poll", cascade="all, delete-orphan")
+    target_group = relationship("Group", foreign_keys=[target_group_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+    __table_args__ = (
+        Index("ix_polls_center", "center_id"),
+        Index("ix_polls_status", "status"),
+    )
+
+
+class PollOption(Base):
+    __tablename__ = "poll_options"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    poll_id = Column(Integer, ForeignKey("polls.id", ondelete="CASCADE"), nullable=False)
+    emoji = Column(String(10), nullable=False)
+    label = Column(String(100), nullable=False)
+    position = Column(Integer, nullable=False, default=0)
+
+    poll = relationship("Poll", back_populates="options")
+
+    __table_args__ = (Index("ix_po_poll", "poll_id"),)
+
+
+class PollResponse(Base):
+    __tablename__ = "poll_responses"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    poll_id = Column(Integer, ForeignKey("polls.id", ondelete="CASCADE"), nullable=False)
+    option_id = Column(Integer, ForeignKey("poll_options.id", ondelete="CASCADE"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    poll = relationship("Poll", back_populates="responses")
+    option = relationship("PollOption")
+    student = relationship("Student")
+
+    __table_args__ = (
+        Index("ix_pr_poll_student", "poll_id", "student_id", unique=True),
+        Index("ix_pr_poll_id", "poll_id"),
+    )
+
+
+# ─── CRM ─────────────────────────────────────────────────────────────────────
+
+
+class LeadStage(str, enum.Enum):
+    YANGI = "Yangi"
+    QONGIROQ = "Qo'ng'iroq"
+    SINOV_DARSI = "Sinov darsi"
+    ROYXATDAN_OTDI = "Ro'yxatdan o'tdi"
+    YOQOTILDI = "Yo'qotildi"
+
+
+class LeadSource(str, enum.Enum):
+    IJTIMOIY_TARMOQ = "Ijtimoiy tarmoq"
+    TAVSIYA = "Tavsiya"
+    REKLAMA = "Reklama"
+    VEBSAYT = "Vebsayt"
+    BOSHQA = "Boshqa"
+
+
+class Lead(Base):
+    __tablename__ = "leads"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=True, index=True)
+    name = Column(String(200), nullable=False)
+    phone = Column(String(20), nullable=False)
+    email = Column(String(255), nullable=True)
+    source = Column(Enum(LeadSource), nullable=True, default=LeadSource.BOSHQA)
+    stage = Column(Enum(LeadStage), nullable=False, default=LeadStage.YANGI)
+    course_interest = Column(String(200), nullable=True)
+    notes = Column(Text, nullable=True)
+    assigned_to_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    trial_date = Column(Date, nullable=True)
+    lost_reason = Column(String(300), nullable=True)
+    converted_student_id = Column(Integer, ForeignKey("students.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
+    converted_student = relationship("Student", foreign_keys=[converted_student_id])
+
+    __table_args__ = (
+        Index("ix_leads_stage", "stage"),
+        Index("ix_leads_phone", "phone"),
+        Index("ix_leads_center", "center_id"),
+    )
+
+
+# ─── Kanban ───────────────────────────────────────────────────────────────────
+
+
+class KanbanBoard(Base):
+    __tablename__ = "kanban_boards"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=True, index=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    columns = relationship("KanbanColumn", back_populates="board", cascade="all, delete-orphan", order_by="KanbanColumn.position")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+    __table_args__ = (Index("ix_kb_center", "center_id"),)
+
+
+class KanbanColumn(Base):
+    __tablename__ = "kanban_columns"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    board_id = Column(Integer, ForeignKey("kanban_boards.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(200), nullable=False)
+    color = Column(String(20), nullable=False, default="#6366f1")
+    position = Column(Integer, nullable=False, default=0)
+    card_limit = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    board = relationship("KanbanBoard", back_populates="columns")
+    cards = relationship("KanbanCard", back_populates="column", cascade="all, delete-orphan", order_by="KanbanCard.position")
+
+    __table_args__ = (Index("ix_kc_board", "board_id"),)
+
+
+class KanbanCard(Base):
+    __tablename__ = "kanban_cards"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    column_id = Column(Integer, ForeignKey("kanban_columns.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(500), nullable=False)
+    description = Column(Text, nullable=True)
+    position = Column(Integer, nullable=False, default=0)
+    due_date = Column(Date, nullable=True)
+    priority = Column(String(10), nullable=False, default="normal")  # low | normal | high | urgent
+    assignee_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    column = relationship("KanbanColumn", back_populates="cards")
+    assignee = relationship("User", foreign_keys=[assignee_id])
+    lead = relationship("Lead", foreign_keys=[lead_id])
+
+    __table_args__ = (Index("ix_kcard_column", "column_id"),)
+
+
+# ─── Multi-Branch Access ──────────────────────────────────────────────────────
+
+
+class BranchRole(str, enum.Enum):
+    OWNER = "OWNER"
+    BRANCH_ADMIN = "BRANCH_ADMIN"
+
+
+class UserCenterAccess(Base):
+    """Links an ADMIN user to additional centers they can manage.
+
+    A user's primary center is still ``User.center_id``. This table grants
+    cross-center visibility for owners who manage multiple branches.
+    """
+
+    __tablename__ = "user_center_access"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=False)
+    role = Column(Enum(BranchRole), nullable=False, default=BranchRole.BRANCH_ADMIN)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", backref="center_access")
+    center = relationship("EducationCenter", backref="access_grants")
+
+    __table_args__ = (
+        Index("ix_uca_user_id", "user_id"),
+        Index("ix_uca_center_id", "center_id"),
+        Index("ix_uca_unique", "user_id", "center_id", unique=True),
+    )
+
+
+# ─── Lesson Materials ─────────────────────────────────────────────────────────
+
+
+class LessonMaterial(Base):
+    __tablename__ = "lesson_materials"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    center_id = Column(Integer, ForeignKey("education_centers.id", ondelete="CASCADE"), nullable=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    file_path = Column(String(500), nullable=False)   # path relative to uploads dir
+    file_name = Column(String(200), nullable=False)   # original filename for display
+    file_type = Column(String(20), nullable=False)    # pdf | video | image | doc | other
+    file_size = Column(Integer, nullable=True)         # bytes
+    uploaded_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    group = relationship("Group")
+    uploaded_by = relationship("User")
+
+    __table_args__ = (
+        Index("ix_lm_group_id", "group_id"),
+        Index("ix_lm_center_id", "center_id"),
     )

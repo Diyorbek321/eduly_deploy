@@ -14,6 +14,13 @@ import {
   Search,
   Clock,
   Zap,
+  Building2,
+  RefreshCw,
+  FileText,
+  Wallet,
+  CheckCircle2,
+  XCircle,
+  CalendarClock,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -33,6 +40,7 @@ import { useAuth } from '@/src/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { encodeId } from '@/src/lib/hashId';
 import api from '@/src/lib/api';
+import { useBranch } from '@/src/contexts/BranchContext';
 
 interface DashboardStats {
   total_students: number;
@@ -63,6 +71,21 @@ interface DebtorItem {
   amount: string;
 }
 
+interface FinanceHealth {
+  month: string;
+  invoices_generated: number;
+  invoices_paid: number;
+  collection_rate: number;
+  overdue_invoices: number;
+  active_teachers: number;
+  teachers_with_salary: number;
+  unpaid_salary_count: number;
+  total_debt: number;
+  total_active_students: number;
+  next_invoice_date: string;
+  next_salary_date: string;
+}
+
 const avatarColors = [
   'bg-violet-100 text-violet-700',
   'bg-sky-100 text-sky-700',
@@ -89,6 +112,7 @@ export const Dashboard = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const navigate = useNavigate();
+  const { activeBranch, isMultiBranch } = useBranch();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -96,19 +120,38 @@ export const Dashboard = () => {
   const [debtors, setDebtors] = useState<DebtorItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeChartFilter, setActiveChartFilter] = useState('30');
+  const [financeHealth, setFinanceHealth] = useState<FinanceHealth | null>(null);
+  const [financeLoading, setFinanceLoading] = useState(false);
+  const [financeAction, setFinanceAction] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
     const fetchDashboardData = async () => {
       setIsLoading(true);
       try {
-        const [statsRes, chartRes, paymentsRes] = await Promise.all([
-          api.get('/dashboard/stats'),
+        let dashStats: DashboardStats;
+        if (isMultiBranch && activeBranch) {
+          const branchRes = await api.get(`/branches/${activeBranch.id}/stats`);
+          const d = branchRes.data?.data ?? branchRes.data;
+          dashStats = {
+            total_students: d.total_students,
+            active_students: d.active_students,
+            total_teachers: d.total_teachers,
+            total_groups: d.total_groups,
+            total_revenue: d.total_revenue,
+            total_debt: d.total_debt,
+          };
+        } else {
+          const res = await api.get('/dashboard/stats');
+          dashStats = res.data;
+        }
+
+        const [chartRes, paymentsRes] = await Promise.all([
           api.get('/dashboard/revenue-chart'),
           api.get('/payments?limit=5'),
         ]);
 
-        setStats(statsRes.data);
+        setStats(dashStats);
 
         const labels: string[] = chartRes.data.labels || [];
         const values: number[] = chartRes.data.data || [];
@@ -125,6 +168,13 @@ export const Dashboard = () => {
         setTransactions(paymentItems);
       } catch {
         // errors handled by interceptor
+      }
+
+      try {
+        const fhRes = await api.get('/finance/health');
+        setFinanceHealth(fhRes.data?.data ?? fhRes.data);
+      } catch {
+        // finance health is non-critical
       }
 
       try {
@@ -146,7 +196,20 @@ export const Dashboard = () => {
       setIsLoading(false);
     };
     fetchDashboardData();
-  }, [isAdmin]);
+  }, [isAdmin, activeBranch, isMultiBranch]);
+
+  const triggerFinanceAction = async (action: 'generate-invoices' | 'auto-calc-salaries') => {
+    setFinanceAction(action);
+    try {
+      await api.post(`/finance/${action}`);
+      const fhRes = await api.get('/finance/health');
+      setFinanceHealth(fhRes.data?.data ?? fhRes.data);
+    } catch {
+      // handled by interceptor
+    } finally {
+      setFinanceAction(null);
+    }
+  };
 
   const kpis = stats
     ? [
@@ -203,6 +266,16 @@ export const Dashboard = () => {
 
       {/* Top accent bar */}
       <div className="h-0.5 w-full bg-gradient-to-r from-[#ec5b13] via-violet-500 to-sky-400" />
+
+      {/* Active branch banner */}
+      {isMultiBranch && activeBranch && (
+        <div className="px-4 sm:px-6 lg:px-8 pt-4">
+          <div className="flex items-center gap-2 text-sm text-slate-600 bg-orange-50 border border-orange-100 rounded-xl px-4 py-2 w-fit">
+            <Building2 size={14} className="text-[#ec5b13]" />
+            <span>Ko'rsatilmoqda: <strong className="text-slate-900">{activeBranch.name}</strong></span>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-7 max-w-[1600px] mx-auto w-full">
 
@@ -266,6 +339,131 @@ export const Dashboard = () => {
                 />
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── FINANCE HEALTH ── */}
+        {isAdmin && !isLoading && financeHealth && (
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+            <div className="flex items-start justify-between mb-5">
+              <div>
+                <h2 className="text-base font-black text-slate-900">Moliya holati</h2>
+                <p className="text-xs text-slate-400 mt-0.5">{financeHealth.month} — avtomatik monitoring</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => triggerFinanceAction('generate-invoices')}
+                  disabled={financeAction !== null}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {financeAction === 'generate-invoices'
+                    ? <RefreshCw size={12} className="animate-spin" />
+                    : <FileText size={12} />}
+                  Hisob-faktura
+                </button>
+                <button
+                  type="button"
+                  onClick={() => triggerFinanceAction('auto-calc-salaries')}
+                  disabled={financeAction !== null}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {financeAction === 'auto-calc-salaries'
+                    ? <RefreshCw size={12} className="animate-spin" />
+                    : <Wallet size={12} />}
+                  Ish haqi
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+              {/* Collection rate */}
+              <div className="col-span-2 sm:col-span-1 flex flex-col items-center justify-center bg-slate-50 rounded-2xl p-4">
+                <div className="relative size-16 mb-2">
+                  <svg className="size-full -rotate-90" viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e2e8f0" strokeWidth="3" />
+                    <circle
+                      cx="18" cy="18" r="15.9" fill="none"
+                      stroke={financeHealth.collection_rate >= 80 ? '#10b981' : financeHealth.collection_rate >= 50 ? '#f59e0b' : '#ef4444'}
+                      strokeWidth="3"
+                      strokeDasharray={`${financeHealth.collection_rate} ${100 - financeHealth.collection_rate}`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-sm font-black text-slate-900">
+                    {financeHealth.collection_rate.toFixed(0)}%
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-slate-600 text-center">To'lov darajasi</p>
+              </div>
+
+              {/* Invoices */}
+              <div className="bg-slate-50 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText size={14} className="text-violet-500" />
+                  <p className="text-xs font-bold text-slate-500">Hisob-fakturalar</p>
+                </div>
+                <p className="text-xl font-black text-slate-900">
+                  {financeHealth.invoices_paid}
+                  <span className="text-sm font-normal text-slate-400">/{financeHealth.invoices_generated}</span>
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">To'langan / Yaratilgan</p>
+              </div>
+
+              {/* Overdue */}
+              <div className={`rounded-2xl p-4 ${financeHealth.overdue_invoices > 0 ? 'bg-amber-50 border border-amber-100' : 'bg-slate-50'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  {financeHealth.overdue_invoices > 0
+                    ? <XCircle size={14} className="text-amber-500" />
+                    : <CheckCircle2 size={14} className="text-emerald-500" />}
+                  <p className="text-xs font-bold text-slate-500">Muddati o'tgan</p>
+                </div>
+                <p className={`text-xl font-black ${financeHealth.overdue_invoices > 0 ? 'text-amber-700' : 'text-emerald-600'}`}>
+                  {financeHealth.overdue_invoices}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">ta hisob-faktura</p>
+              </div>
+
+              {/* Salaries */}
+              <div className={`rounded-2xl p-4 ${financeHealth.unpaid_salary_count > 0 ? 'bg-rose-50 border border-rose-100' : 'bg-slate-50'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Wallet size={14} className={financeHealth.unpaid_salary_count > 0 ? 'text-rose-500' : 'text-emerald-500'} />
+                  <p className="text-xs font-bold text-slate-500">Ish haqi</p>
+                </div>
+                <p className={`text-xl font-black ${financeHealth.unpaid_salary_count > 0 ? 'text-rose-700' : 'text-emerald-600'}`}>
+                  {financeHealth.teachers_with_salary}
+                  <span className="text-sm font-normal text-slate-400">/{financeHealth.active_teachers}</span>
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">Hisoblangan</p>
+              </div>
+
+              {/* Total debt */}
+              <div className="bg-slate-50 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle size={14} className="text-rose-400" />
+                  <p className="text-xs font-bold text-slate-500">Qarzdorlik</p>
+                </div>
+                <p className="text-xl font-black text-slate-900">
+                  {(financeHealth.total_debt / 1_000_000).toFixed(1)}
+                  <span className="text-sm font-normal text-slate-400">M UZS</span>
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">{financeHealth.total_active_students} faol o'quvchi</p>
+              </div>
+
+              {/* Next runs */}
+              <div className="bg-slate-50 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <CalendarClock size={14} className="text-sky-500" />
+                  <p className="text-xs font-bold text-slate-500">Keyingi avtomatik</p>
+                </div>
+                <p className="text-[11px] text-slate-600 font-bold">
+                  📄 {financeHealth.next_invoice_date}
+                </p>
+                <p className="text-[11px] text-slate-600 font-bold mt-1">
+                  💰 {financeHealth.next_salary_date}
+                </p>
+              </div>
+            </div>
           </div>
         )}
 

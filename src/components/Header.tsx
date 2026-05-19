@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Search, Bell, ChevronDown, LogOut, User as UserIcon, Menu } from 'lucide-react';
+import { Search, Bell, ChevronDown, LogOut, User as UserIcon, Menu, Building2, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useSidebar } from '@/src/contexts/SidebarContext';
+import { useBranch } from '@/src/contexts/BranchContext';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Administrator',
@@ -15,12 +16,19 @@ export const Header = ({ title }: { title?: string }) => {
   const { open: openSidebar } = useSidebar();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const branchRef = useRef<HTMLDivElement | null>(null);
+
+  const { branches, activeBranch, setActiveBranch, isMultiBranch } = useBranch();
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
+      }
+      if (branchRef.current && !branchRef.current.contains(e.target as Node)) {
+        setBranchOpen(false);
       }
     };
     document.addEventListener('mousedown', onClick);
@@ -56,6 +64,62 @@ export const Header = ({ title }: { title?: string }) => {
       </div>
 
       <div className="flex items-center gap-3">
+        {/* Branch switcher — only visible to admins with multiple branches */}
+        {isMultiBranch && (
+          <div className="relative hidden sm:block" ref={branchRef}>
+            <button
+              type="button"
+              onClick={() => setBranchOpen((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors text-sm"
+            >
+              <Building2 size={14} className="text-[#ec5b13]" />
+              <span className="font-bold text-slate-800 max-w-[120px] truncate">
+                {activeBranch?.name ?? 'Filial'}
+              </span>
+              <ChevronDown size={13} className="text-slate-400" />
+            </button>
+
+            {branchOpen && (
+              <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50">
+                <p className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Filiallar
+                </p>
+                {branches.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveBranch(b);
+                      setBranchOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 text-left"
+                  >
+                    <div className="size-7 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                      <Building2 size={13} className="text-[#ec5b13]" />
+                    </div>
+                    <span className="font-bold text-slate-800 flex-1 truncate">{b.name}</span>
+                    {activeBranch?.id === b.id && (
+                      <Check size={14} className="text-[#ec5b13] flex-shrink-0" />
+                    )}
+                  </button>
+                ))}
+                <div className="border-t border-slate-100 mt-1 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigate('/branches');
+                      setBranchOpen(false);
+                    }}
+                    className="w-full px-4 py-2 text-xs font-bold text-[#ec5b13] hover:bg-orange-50 text-left"
+                  >
+                    Barcha filiallarni boshqarish →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <button
           type="button"
           className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl relative transition-colors"

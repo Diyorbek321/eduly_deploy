@@ -54,16 +54,29 @@ interface TeacherOption {
   hours: number;
   hourlyRate: number;
   salaryPercent: number;
+  basePerStudent: number;
+}
+
+interface StudentBreakdown {
+  student_id: number;
+  student_name: string;
+  payment_amount: number;
+  course_price: number;
+  base_per_student: number;
+  surplus: number;
+  teacher_earn: number;
 }
 
 interface CalcResult {
   teacher_name: string;
   period: number;
   period_label: string;
-  percent: number;
+  base_per_student: number;
   payments_total: number;
   calculated_amount: number;
   payments_count: number;
+  student_count: number;
+  student_breakdowns: StudentBreakdown[];
   already_exists: boolean;
 }
 
@@ -137,6 +150,7 @@ export const Salaries = () => {
         hours: 0,
         hourlyRate: t.hourly_rate || 0,
         salaryPercent: t.salary_percent ?? 40,
+        basePerStudent: t.base_per_student ?? 120000,
       }));
       setTeachersList(mapped);
       if (mapped.length > 0) {
@@ -213,7 +227,8 @@ export const Salaries = () => {
       type: 'Asosiy maosh',
       amount: 0,
       bonus: 0,
-      percent: Number(localStorage.getItem('eduly_default_salary_percent') || 40),
+      percent: 0,
+      period: 1,
       paidStudentsTotal: 0,
       method: 'Karta orqali',
       date: new Date().toISOString().split('T')[0],
@@ -256,7 +271,8 @@ export const Salaries = () => {
       type: salary.type,
       amount: salary.amount,
       bonus: salary.bonus,
-      percent: Number(localStorage.getItem('eduly_default_salary_percent') || 40),
+      percent: 0,
+      period: 1,
       paidStudentsTotal: 0,
       method: salary.method,
       date: salary.date,
@@ -395,7 +411,7 @@ export const Salaries = () => {
         {/* Auto-calc info banner */}
         <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-bold text-emerald-700">
           <span className="size-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
-          Maoshlar har bir to'lov qabul qilinganda avtomatik hisoblanadi. O'qituvchi profilidagi foiz o'zgartirilsa, keyingi to'lovdan kuchga kiradi.
+          Yangi formula: har bir to'lagan o'quvchi uchun o'qituvchiga asosiy summa + kurs narxidan ortiqcha to'lovning 1/3 qismi. Maoshlar avtomatik yangilanadi.
         </div>
 
         {/* Salaries Table */}
@@ -425,10 +441,10 @@ export const Salaries = () => {
                         <p className="font-bold text-sm text-slate-900">{s.name}</p>
                         {s.period ? (
                           <p className="text-[10px] text-orange-500 font-bold uppercase">
-                            {s.period === 1 ? '1–14' : '15–oxiri'} · {s.percentUsed}%
+                            {s.period === 1 ? '1–14' : '15–oxiri'} · formula asosida
                           </p>
                         ) : (
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">{s.hours} soat</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">{s.paymentsTotal ? `${s.paymentsTotal.toLocaleString()} UZS to'lov` : `${s.hours} soat`}</p>
                         )}
                       </div>
                     </div>
@@ -505,7 +521,7 @@ export const Salaries = () => {
                   formData.calcType === 'fixed' ? "bg-white text-[#ec5b13] shadow-sm" : "text-slate-500"
                 )}
               >
-                Asosiy maosh
+                Qo'lda kiritish
               </button>
               <button
                 type="button"
@@ -515,7 +531,7 @@ export const Salaries = () => {
                   formData.calcType === 'percent' ? "bg-white text-[#ec5b13] shadow-sm" : "text-slate-500"
                 )}
               >
-                O'quvchilardan foiz
+                Formula asosida
               </button>
             </div>
           </div>
@@ -580,7 +596,17 @@ export const Salaries = () => {
           </div>
           {formData.calcType === 'percent' && (
             <div className="md:col-span-2 p-4 bg-orange-50 border border-orange-100 rounded-xl space-y-4">
-              <label className="text-xs font-black text-orange-700 uppercase">Foiz asosida hisoblash</label>
+              <div className="flex items-start justify-between">
+                <label className="text-xs font-black text-orange-700 uppercase">Formula asosida hisoblash</label>
+                <span className="text-[10px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold">
+                  {(teachersList.find(t => t.id === formData.teacherId)?.basePerStudent ?? 120000).toLocaleString()} UZS/o'quvchi
+                </span>
+              </div>
+
+              <div className="p-3 bg-white rounded-lg text-[11px] text-slate-600 font-bold space-y-1 border border-orange-100">
+                <p className="text-slate-500">Formula: <span className="text-slate-800">Asosiy ({(teachersList.find(t => t.id === formData.teacherId)?.basePerStudent ?? 120000).toLocaleString()} UZS) + ortiqcha to'lovning 1/3 qismi</span></p>
+                <p className="text-slate-400">Misol: o'quvchi 400 000 UZS to'lasa, kurs narxi 350 000 → ortiqcha 50 000 → o'qituvchi {((teachersList.find(t => t.id === formData.teacherId)?.basePerStudent ?? 120000) + Math.floor(50000/3)).toLocaleString()} UZS oladi</p>
+              </div>
 
               {/* Period selector */}
               <div>
@@ -613,53 +639,71 @@ export const Salaries = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Foiz (%)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={formData.percent}
-                    onChange={(e) => { setFormData(prev => ({ ...prev, percent: Number(e.target.value) })); setCalcResult(null); }}
-                    className="w-full px-3 py-2.5 mt-1 bg-white border-none rounded-lg outline-none font-bold text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Jami to'lovlar (UZS)</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={formData.paidStudentsTotal.toLocaleString()}
-                    className="w-full px-3 py-2.5 mt-1 bg-slate-50 border-none rounded-lg outline-none font-bold text-sm text-slate-600"
-                  />
-                </div>
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={calculatePercentSalary}
-                    disabled={isCalculatingPct || !formData.teacherId}
-                    className="w-full py-2.5 bg-[#ec5b13] hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all"
-                  >
-                    {isCalculatingPct ? 'Hisoblanmoqda...' : 'Hisoblash'}
-                  </button>
-                </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={calculatePercentSalary}
+                  disabled={isCalculatingPct || !formData.teacherId}
+                  className="w-full py-2.5 bg-[#ec5b13] hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all"
+                >
+                  {isCalculatingPct ? 'Hisoblanmoqda...' : 'Hisoblash'}
+                </button>
               </div>
 
               {/* Calculation result breakdown */}
               {calcResult && (
                 <div className={cn(
-                  "p-3 rounded-xl border text-xs font-bold space-y-1",
-                  calcResult.already_exists
-                    ? "bg-yellow-50 border-yellow-200 text-yellow-800"
-                    : "bg-green-50 border-green-200 text-green-800"
+                  "rounded-xl border text-xs font-bold overflow-hidden",
+                  calcResult.already_exists ? "border-yellow-200" : "border-green-200"
                 )}>
-                  {calcResult.already_exists && (
-                    <p className="text-yellow-700 font-black">⚠️ Bu davr uchun oylik allaqachon mavjud</p>
+                  <div className={cn(
+                    "px-4 py-2.5 flex items-center justify-between",
+                    calcResult.already_exists ? "bg-yellow-50" : "bg-green-50"
+                  )}>
+                    <div className="space-y-0.5">
+                      {calcResult.already_exists && (
+                        <p className="text-yellow-700 font-black">⚠️ Bu davr uchun oylik allaqachon mavjud</p>
+                      )}
+                      <p className={calcResult.already_exists ? "text-yellow-700" : "text-green-700"}>
+                        📅 {calcResult.period_label} · {calcResult.student_count} o'quvchi to'ladi
+                      </p>
+                      <p className={calcResult.already_exists ? "text-yellow-700" : "text-green-700"}>
+                        💰 Jami to'lovlar: {calcResult.payments_total.toLocaleString()} UZS
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-slate-400 uppercase">O'qituvchi oladi</p>
+                      <p className="text-2xl font-black text-slate-900">{calcResult.calculated_amount.toLocaleString()}</p>
+                      <p className="text-[10px] text-slate-400">UZS</p>
+                    </div>
+                  </div>
+                  {calcResult.student_breakdowns.length > 0 && (
+                    <div className="bg-white">
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="border-b border-slate-100 bg-slate-50">
+                            <th className="px-3 py-2 text-left font-black text-slate-400 uppercase">O'quvchi</th>
+                            <th className="px-3 py-2 text-right font-black text-slate-400 uppercase">To'lov</th>
+                            <th className="px-3 py-2 text-right font-black text-slate-400 uppercase">Kurs narxi</th>
+                            <th className="px-3 py-2 text-right font-black text-slate-400 uppercase">O'qituvchiga</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {calcResult.student_breakdowns.map(b => (
+                            <tr key={b.student_id} className="hover:bg-slate-50">
+                              <td className="px-3 py-1.5 font-bold text-slate-700">{b.student_name}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-600">{b.payment_amount.toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-400">{b.course_price.toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right font-black text-emerald-600">
+                                {b.teacher_earn.toLocaleString()}
+                                {b.surplus > 0 && <span className="text-[9px] text-orange-500 ml-1">+{Math.floor(b.surplus/3).toLocaleString()}</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
-                  <p>📅 Davr: {calcResult.period_label}</p>
-                  <p>💰 To'lovlar jami: {calcResult.payments_total.toLocaleString()} UZS ({calcResult.payments_count} ta to'lov)</p>
-                  <p>📊 {calcResult.percent}% → <span className="text-base">{calcResult.calculated_amount.toLocaleString()} UZS</span></p>
                 </div>
               )}
             </div>

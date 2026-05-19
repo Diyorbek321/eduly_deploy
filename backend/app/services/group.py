@@ -1,5 +1,7 @@
 """Group service — CRUD, enrollment management, multi-tenant scoped."""
 
+import calendar
+from datetime import date, datetime
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -157,7 +159,51 @@ def add_student(
     )
     if exists:
         raise HTTPException(status.HTTP_409_CONFLICT, "Talaba allaqachon guruhda")
-    db.add(StudentGroup(student_id=student_id, group_id=group_id))
+    target_date: date | None = None
+    group_obj = db.query(Group).filter(Group.id == group_id).first()
+    if group_obj and group_obj.course and group_obj.course.max_duration_months:
+        months = group_obj.course.max_duration_months
+        today = datetime.utcnow().date()
+        month = today.month - 1 + months
+        year = today.year + month // 12
+        month = month % 12 + 1
+        day = min(today.day, calendar.monthrange(year, month)[1])
+        target_date = today.replace(year=year, month=month, day=day)
+
+    db.add(StudentGroup(student_id=student_id, group_id=group_id, target_completion_date=target_date))
+    db.flush()
+
+    # Auto-assign student to CourseModule matching the group's level field
+    if group_obj and group_obj.level and group_obj.course_id:
+        from app.models.models import CourseModule, StudentModuleEnrollment
+        module = (
+            db.query(CourseModule)
+            .filter(
+                CourseModule.course_id == group_obj.course_id,
+                CourseModule.name.ilike(group_obj.level),
+            )
+            .first()
+        )
+        if module:
+            # Remove any existing enrollment for the same course
+            existing_enroll = (
+                db.query(StudentModuleEnrollment)
+                .join(CourseModule, StudentModuleEnrollment.module_id == CourseModule.id)
+                .filter(
+                    StudentModuleEnrollment.student_id == student_id,
+                    CourseModule.course_id == group_obj.course_id,
+                )
+                .first()
+            )
+            if existing_enroll:
+                existing_enroll.module_id = module.id
+                existing_enroll.enrolled_at = datetime.utcnow()
+            else:
+                db.add(StudentModuleEnrollment(
+                    student_id=student_id,
+                    module_id=module.id,
+                ))
+
     db.commit()
 
 

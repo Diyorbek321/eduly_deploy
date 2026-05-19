@@ -15,6 +15,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.models import User, UserRole
 from app.schemas.student_me import (
     MyAttendanceOut,
+    MyLearningPathOut,
     MyPaymentsOut,
     MyProfileOut,
     MyScheduleOut,
@@ -85,6 +86,22 @@ def get_my_attendance(
     current_user: User = Depends(require_student),
 ) -> MyAttendanceOut:
     return svc.get_attendance(db, current_user, page, limit, from_date, to_date, group_id)
+
+
+@router.get(
+    "/learning-path",
+    response_model=MyLearningPathOut,
+    summary="Get my learning path",
+    description=(
+        "Returns per-group progress toward target completion date. "
+        "Includes time-based progress, homework completion rate, and behind-pace flag."
+    ),
+)
+def get_my_learning_path(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_student),
+) -> MyLearningPathOut:
+    return svc.get_learning_path(db, current_user)
 
 
 @router.get(

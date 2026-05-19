@@ -33,6 +33,9 @@ export const Payments = () => {
   const [payments, setPayments] = useState<any[]>([]);
   const [studentOptions, setStudentOptions] = useState<{ id: number; name: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [methodFilter, setMethodFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const [paymentForm, setPaymentForm] = useState({
     studentId: 0,
@@ -94,13 +97,21 @@ export const Payments = () => {
     fetchStudentOptions();
   }, []);
 
+  // Apply filters
+  const filteredPayments = payments.filter((p) => {
+    const matchesSearch = !searchQuery || (p.student || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesMethod = methodFilter === 'all' || p.method === methodFilter;
+    const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
+    return matchesSearch && matchesMethod && matchesStatus;
+  });
+
   // Compute stats from real data
-  const totalRevenue = payments.reduce((acc, p) => acc + Number(p.amount.replace(/[^0-9]/g, '')), 0);
+  const totalRevenue = filteredPayments.reduce((acc, p) => acc + Number(p.amount.replace(/[^0-9]/g, '')), 0);
   const stats = [
     { label: 'Umumiy tushum', value: totalRevenue.toLocaleString(), trend: '', icon: Wallet, color: 'bg-emerald-100 text-emerald-600' },
-    { label: 'To\'lovlar soni', value: String(payments.length), trend: '', icon: ArrowUpRight, color: 'bg-rose-100 text-rose-600' },
-    { label: 'Muvaffaqiyatli', value: String(payments.filter(p => p.status === 'Muvaffaqiyatli').length), trend: '', icon: TrendingUp, color: 'bg-blue-100 text-blue-600' },
-    { label: 'Kutilmoqda', value: String(payments.filter(p => p.status === 'Kutilmoqda').length), trend: '', icon: ArrowDownLeft, color: 'bg-amber-100 text-amber-600' },
+    { label: 'To\'lovlar soni', value: String(filteredPayments.length), trend: '', icon: ArrowUpRight, color: 'bg-rose-100 text-rose-600' },
+    { label: 'Muvaffaqiyatli', value: String(filteredPayments.filter(p => p.status === 'Muvaffaqiyatli').length), trend: '', icon: TrendingUp, color: 'bg-blue-100 text-blue-600' },
+    { label: 'Kutilmoqda', value: String(filteredPayments.filter(p => p.status === 'Kutilmoqda').length), trend: '', icon: ArrowDownLeft, color: 'bg-amber-100 text-amber-600' },
   ];
 
   return (
@@ -115,7 +126,7 @@ export const Payments = () => {
           </div>
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => exportToCSV(payments, 'tolovlar_hisoboti')}
+              onClick={() => exportToCSV(filteredPayments, 'tolovlar_hisoboti')}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-all font-bold text-slate-600 text-sm"
             >
               <Download size={18} />
@@ -158,20 +169,41 @@ export const Payments = () => {
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#ec5b13] transition-colors" size={20} />
-            <input 
-              type="text" 
-              placeholder="O'quvchi ismi bo'yicha qidirish" 
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="O'quvchi ismi bo'yicha qidirish"
               className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 text-sm outline-none transition-all"
             />
           </div>
           <div className="flex items-center gap-3">
-            <select className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-600 outline-none cursor-pointer">
-              <option>To'lov turi</option>
-              <option>Click</option>
-              <option>Payme</option>
-              <option>Naqd</option>
+            <select
+              value={methodFilter}
+              onChange={(e) => setMethodFilter(e.target.value)}
+              className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-600 outline-none cursor-pointer"
+            >
+              <option value="all">Barcha to'lov turlari</option>
+              <option value="Click">Click</option>
+              <option value="Payme">Payme</option>
+              <option value="Cash">Naqd</option>
+              <option value="Card">Karta</option>
             </select>
-            <button className="p-3 bg-slate-50 rounded-xl text-slate-400 hover:bg-slate-100 transition-all">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-600 outline-none cursor-pointer"
+            >
+              <option value="all">Barcha holatlar</option>
+              <option value="Muvaffaqiyatli">Muvaffaqiyatli</option>
+              <option value="Kutilmoqda">Kutilmoqda</option>
+              <option value="Rad etildi">Rad etildi</option>
+            </select>
+            <button
+              onClick={() => { setSearchQuery(''); setMethodFilter('all'); setStatusFilter('all'); }}
+              title="Filtrlarni tozalash"
+              className="p-3 bg-slate-50 rounded-xl text-slate-400 hover:bg-slate-100 transition-all"
+            >
               <Filter size={20} />
             </button>
           </div>
@@ -192,7 +224,7 @@ export const Payments = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {payments.map((p) => (
+              {filteredPayments.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-6 py-4">
                     <span className="font-bold text-sm text-slate-900">{p.student}</span>

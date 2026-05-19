@@ -22,27 +22,30 @@ export default function Focus() {
   }, [mode]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isActive && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
-        if (mode === 'focus' && (timeLeft % 60 === 0)) {
-           // Small reward every minute of focus
-           setCoinsEarned(prev => prev + 1);
+    if (!isActive) return;
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          setIsActive(false);
+          if (mode === 'focus') {
+            setCoinsEarned(c => c + 50);
+            setShowCelebration(true);
+            setTimeout(() => setShowCelebration(false), 5000);
+            setMode('break');
+            return BREAK_TIME;
+          } else {
+            setMode('focus');
+            return FOCUS_TIME;
+          }
         }
-      }, 1000);
-    } else if (timeLeft === 0) {
-      setIsActive(false);
-      if (mode === 'focus') {
-        setCoinsEarned(prev => prev + 50); // Big reward for completion
-        setShowCelebration(true);
-        setTimeout(() => setShowCelebration(false), 5000);
-      }
-      setMode(mode === 'focus' ? 'break' : 'focus');
-      setTimeLeft(mode === 'focus' ? BREAK_TIME : FOCUS_TIME);
-    }
+        if (mode === 'focus' && prev % 60 === 0) {
+          setCoinsEarned(c => c + 1);
+        }
+        return prev - 1;
+      });
+    }, 1000);
     return () => clearInterval(interval);
-  }, [isActive, timeLeft, mode]);
+  }, [isActive, mode]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -106,14 +109,9 @@ export default function Focus() {
 
           {/* Time Text */}
           <div className="absolute inset-0 flex flex-col items-center justify-center space-y-2">
-            <motion.span 
-              key={timeLeft}
-              initial={{ scale: 0.9, opacity: 0.5 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="text-6xl font-black font-headline tracking-tighter"
-            >
+            <span className="text-6xl font-black font-headline tracking-tighter">
               {formatTime(timeLeft)}
-            </motion.span>
+            </span>
             <span className={cn(
               "text-xs font-black uppercase tracking-[0.2em]",
               mode === 'focus' ? "text-primary" : "text-secondary"

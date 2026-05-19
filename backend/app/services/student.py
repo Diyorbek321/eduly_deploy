@@ -40,7 +40,16 @@ def _enrich(student: Student, db: Session | None = None) -> Student:
     student.login_email = student.user.email if student.user else None
     student.has_login = student.user_id is not None
     student.is_overdue = _is_overdue(student, db) if db else False
+    student.homework_strikes = max(
+        (sg.homework_strikes or 0 for sg in (student.enrollments or [])),
+        default=0,
+    )
     return student
+
+
+def _enrich_out(student: Student) -> Student:
+    """Same as _enrich but for use when db is not available (router-level queries)."""
+    return _enrich(student, db=None)
 
 
 def _scope(query, tenant: TenantContext | None):

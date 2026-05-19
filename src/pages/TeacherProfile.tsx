@@ -76,6 +76,8 @@ export const TeacherProfile = () => {
   const [teacher, setTeacher] = useState<Teacher | null>(null);
   const [teacherGroups, setTeacherGroups] = useState<TeacherGroup[]>([]);
   const [salaries, setSalaries] = useState<SalaryInfo[]>([]);
+  const [kpiHistory, setKpiHistory] = useState<any[]>([]);
+  const [badges, setBadges] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,10 +87,12 @@ export const TeacherProfile = () => {
       setIsLoading(true);
       setError(null);
       try {
-        const [teacherRes, groupsRes, salariesRes] = await Promise.all([
+        const [teacherRes, groupsRes, salariesRes, kpiRes, badgesRes] = await Promise.all([
           api.get(`/teachers/${id}`),
           api.get(`/teachers/${id}/groups`),
           api.get(`/teachers/${id}/salaries`),
+          api.get(`/kpi/${id}/history`).catch(() => ({ data: [] })),
+          api.get(`/kpi/${id}/badges`).catch(() => ({ data: [] })),
         ]);
         const t = teacherRes.data;
         setTeacher({
@@ -100,6 +104,7 @@ export const TeacherProfile = () => {
           bonus: 0,
           hourlyRate: t.hourly_rate ?? 0,
           salaryPercent: t.salary_percent ?? 40,
+          basePerStudent: t.base_per_student ?? 120000,
           status: t.status ?? 'Faol',
           groupsCount: t.groups_count ?? 0,
           studentsCount: t.students_count ?? 0,
@@ -112,6 +117,8 @@ export const TeacherProfile = () => {
         });
         setTeacherGroups(groupsRes.data);
         setSalaries(salariesRes.data);
+        setKpiHistory(kpiRes.data || []);
+        setBadges(badgesRes.data || []);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "O'qituvchi ma'lumotlarini yuklashda xatolik");
       } finally {
@@ -377,7 +384,7 @@ export const TeacherProfile = () => {
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">Maosh</h3>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
-                    {(teacher as any).salaryPercent ?? 40}% foiz
+                    {((teacher as any).basePerStudent ?? 120000).toLocaleString()} UZS/o'quvchi
                   </span>
                   <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl">
                     <DollarSign size={18} />
@@ -452,6 +459,94 @@ export const TeacherProfile = () => {
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* KPI Score Card */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">KPI Ball</h3>
+                {kpiHistory.length > 0 && (() => {
+                  const latest = kpiHistory[0];
+                  const tierColors: Record<string, string> = {
+                    platinum: 'bg-purple-100 text-purple-700',
+                    gold:     'bg-yellow-100 text-yellow-700',
+                    silver:   'bg-slate-100 text-slate-600',
+                    none:     'bg-slate-50 text-slate-400',
+                  };
+                  const tierLabels: Record<string, string> = {
+                    platinum: '🏆 Platinum',
+                    gold:     '🥇 Gold',
+                    silver:   '🥈 Silver',
+                    none:     '—',
+                  };
+                  return (
+                    <span className={cn("text-[10px] font-black px-2 py-1 rounded-full", tierColors[latest.bonus_tier] ?? 'bg-slate-50 text-slate-400')}>
+                      {tierLabels[latest.bonus_tier] ?? '—'}
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {kpiHistory.length === 0 ? (
+                <p className="text-xs text-slate-400 italic">KPI hali hisoblanmagan. "Hisoblash" tugmasini bosing.</p>
+              ) : (() => {
+                const latest = kpiHistory[0];
+                const score = latest.total_score ?? 0;
+                const scoreColor = score >= 90 ? '#8b5cf6' : score >= 75 ? '#f59e0b' : score >= 60 ? '#64748b' : '#ef4444';
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-end gap-2">
+                      <span className="text-4xl font-black" style={{ color: scoreColor }}>{score.toFixed(1)}</span>
+                      <span className="text-slate-400 text-sm font-bold mb-1">/ 100 bal · {latest.month}</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {[
+                        { label: "O'quvchi saqlanishi", score: latest.retention_score, max: 30 },
+                        { label: 'Uy vazifasi', score: latest.homework_score, max: 25 },
+                        { label: 'Davomat', score: latest.attendance_score, max: 25 },
+                        { label: "To'lov o'z vaqtida", score: latest.payment_score, max: 20 },
+                      ].map(item => (
+                        <div key={item.label} className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-500 font-bold w-36 shrink-0">{item.label}</span>
+                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{ width: `${Math.round((item.score / item.max) * 100)}%`, background: scoreColor }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-black text-slate-700 w-10 text-right">{item.score}/{item.max}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {latest.bonus_percent > 0 && (
+                      <p className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg">
+                        +{latest.bonus_percent}% bonus maoshga qo'shiladi
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Badges */}
+              {badges.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Yutuqlar</p>
+                  <div className="flex flex-wrap gap-2">
+                    {badges.map((b: any) => {
+                      const icons: Record<string, string> = {
+                        homework_champion: '📚', perfect_attendance: '✅',
+                        zero_dropout: '🛡️', rising_star: '⭐', full_house: '🏠',
+                      };
+                      return (
+                        <span key={b.id} title={b.description} className="flex items-center gap-1 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold text-slate-600">
+                          <span>{icons[b.badge_type] ?? '🏅'}</span>
+                          {b.description?.split('—')[0]?.trim() || b.badge_type}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -567,18 +662,19 @@ export const TeacherProfile = () => {
             <input type="text" defaultValue={teacher.specialty} className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm" />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-black text-slate-400 uppercase">Maosh foizi (%)</label>
+            <label className="text-xs font-black text-slate-400 uppercase">O'quvchi boshiga asosiy maosh (UZS)</label>
             <div className="relative">
               <input
                 type="number"
                 min={0}
-                max={100}
-                defaultValue={(teacher as any).salaryPercent ?? 40}
+                step={1000}
+                defaultValue={(teacher as any).basePerStudent ?? 120000}
+                name="base_per_student"
                 className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none font-bold text-sm"
               />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">%</span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">UZS</span>
             </div>
-            <p className="text-[10px] text-slate-400 font-medium">O'quvchilar to'lovidan o'qituvchiga berilgan ulush</p>
+            <p className="text-[10px] text-slate-400 font-medium">Har bir to'lagan o'quvchi uchun kafolatlangan miqdor + ortiqcha to'lovning 1/3 qismi qo'shiladi</p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-black text-slate-400 uppercase">Tug'ilgan sanasi</label>

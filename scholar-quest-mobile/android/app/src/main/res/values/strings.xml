@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Scholar Quest</string>
-    <string name="title_activity_main">Scholar Quest</string>
-    <string name="package_name">com.eduly.scholarquest</string>
-    <string name="custom_url_scheme">com.eduly.scholarquest</string>
+    <string name="app_name">Shanghai School</string>
+    <string name="title_activity_main">Shanghai School</string>
+    <string name="package_name">com.shanghai.school</string>
+    <string name="custom_url_scheme">com.shanghai.school</string>
 </resources>

@@ -1,4 +1,4 @@
-import { ArrowRight, Timer, PlayCircle, Rocket, Flag, Bookmark, Zap, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Timer, PlayCircle, Rocket, Flag, Bookmark, Zap, Sparkles, X, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState } from 'react';
 import { cn } from '@/src/lib/utils';
@@ -102,6 +102,20 @@ export default function Learn() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Library shortcut */}
+      <motion.section variants={itemVariants}>
+        <Link to="/library" className="flex items-center gap-4 bg-white rounded-4xl p-5 border border-surface-container shadow-sm hover:shadow-md active:scale-[0.98] transition-all">
+          <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+            <BookOpen size={22} className="text-primary" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-extrabold text-base text-on-surface">Kutubxona</h3>
+            <p className="text-xs text-on-surface-variant mt-0.5">Guruhingiz materiallari — PDF, video, hujjatlar</p>
+          </div>
+          <ArrowRight size={18} className="text-on-surface-variant" />
+        </Link>
+      </motion.section>
 
       {/* Categories */}
       <motion.section variants={itemVariants}>

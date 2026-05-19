@@ -1,0 +1,405 @@
+================================================================================
+EDULY — REDEPLOYMENT GUIDE (battle-tested)
+================================================================================
+Server:  DigitalOcean droplet (Ubuntu 22.04+)
+IP:      164.90.223.92
+Domain:  amorabox.uz (when DNS works) — for now we deploy via raw IP
+Admin:   dturgunboyev635@gmail.com
+Repo:    /var/www/eduly  (owner: www-data)
+Backend: FastAPI on 127.0.0.1:8000 via systemd (service: eduly)
+Web:     nginx serves 3 SPAs under /, /super/, /teacher/
+DB:      PostgreSQL — db=eduly, user=eduly_user
+
+This file captures EVERY step + EVERY gotcha we hit so future redeploys are
+copy-paste, no debugging.
+
+================================================================================
+PART A — REDEPLOY (existing droplet, code already on server)
+================================================================================
+
+Use this when: code is already in /var/www/eduly, you just want to push updates.
+
+────────────────────────────────────────────────────────────────────────────────
+A1. SSH into server
+────────────────────────────────────────────────────────────────────────────────
+    ssh root@164.90.223.92
+
+────────────────────────────────────────────────────────────────────────────────
+A2. Pull latest backend + restart service
+────────────────────────────────────────────────────────────────────────────────
+GOTCHA: git refuses with "dubious ownership" because /var/www/eduly is
+        owned by www-data but you're root. Add safe.directory once:
+
+    git config --global --add safe.directory /var/www/eduly
+
+Then run the full update sequence:
+
+    cd /var/www/eduly && git pull
+    chown -R www-data:www-data /var/www/eduly
+    cd backend && source venv/bin/activate
+    pip install -r requirements.txt
+    alembic upgrade head
+    systemctl restart eduly
+    systemctl status eduly --no-pager
+    curl http://127.0.0.1:8000/api/health
+
+Expected last line:
+    {"success":true,"data":{"status":"ok"},"error":null}
+
+GOTCHA: ALWAYS run `chown -R www-data:www-data /var/www/eduly` after a
+        git pull as root, or systemd service may fail to read new files.
+
+────────────────────────────────────────────────────────────────────────────────
+A3. Build SPAs locally (on your laptop, NOT the server)
+────────────────────────────────────────────────────────────────────────────────
+    cd "/home/diyorbek/Downloads/eduly(11)"
+
+Verify .env.production files use RELATIVE /api (not absolute URL):
+
+    cat .env.production
+    cat super-admin/.env.production
+    cat edusaas-teacher-dashboard/.env.production
+
+Each must contain:  VITE_API_BASE_URL=/api
+
+If they show https://eduly.uz/api or similar absolute URL — fix to /api,
+then rebuild. Relative path works with ANY host (IP, amorabox.uz, etc.).
+
+Build all 3:
+
+    npm run build
+    ( cd super-admin && npm run build )
+    ( cd edusaas-teacher-dashboard && npm run build )
+
+────────────────────────────────────────────────────────────────────────────────
+A4. Upload built bundles (from laptop)
+────────────────────────────────────────────────────────────────────────────────
+    rsync -avz --delete dist/                             root@164.90.223.92:/var/www/eduly/admin/
+    rsync -avz --delete super-admin/dist/                 root@164.90.223.92:/var/www/eduly/super-admin/
+    rsync -avz --delete edusaas-teacher-dashboard/dist/   root@164.90.223.92:/var/www/eduly/teacher/
+    ssh root@164.90.223.92 "chown -R www-data:www-data /var/www/eduly && systemctl reload nginx"
+
+────────────────────────────────────────────────────────────────────────────────
+A5. Smoke test
+────────────────────────────────────────────────────────────────────────────────
+From laptop:
+
+    curl -I http://164.90.223.92/                # 200 OK
+    curl    http://164.90.223.92/api/health      # {"success":true,...}
+    curl -I http://164.90.223.92/super/          # 200
+    curl -I http://164.90.223.92/teacher/        # 200
+
+In browser open:
+    http://164.90.223.92/                # admin
+    http://164.90.223.92/super/          # super admin
+    http://164.90.223.92/teacher/        # teacher dashboard
+
+
+================================================================================
+PART B — FRESH DEPLOY (new droplet from zero)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+B1. Create droplet
+────────────────────────────────────────────────────────────────────────────────
+DigitalOcean → Create Droplet:
+  - Image:    Ubuntu 22.04 LTS
+  - Size:     Basic $6/mo (1GB) minimum, $12/mo (2GB) recommended
+  - SSH Key:  paste content of ~/.ssh/id_ed25519.pub from your laptop
+  - Name:     eduly-prod
+
+After creation, note the public IP.
+
+────────────────────────────────────────────────────────────────────────────────
+B2. DNS (optional — only if using a domain like amorabox.uz)
+────────────────────────────────────────────────────────────────────────────────
+At your registrar:
+  Type=A, Host=@,   Value=<droplet-ip>
+  Type=A, Host=www, Value=<droplet-ip>
+
+Verify (from laptop):  dig amorabox.uz +short  →  should return droplet IP
+
+────────────────────────────────────────────────────────────────────────────────
+B3. Server bootstrap
+────────────────────────────────────────────────────────────────────────────────
+    ssh root@<droplet-ip>
+
+    apt update && apt upgrade -y
+    apt install -y python3 python3-pip python3-venv nginx certbot \
+                   python3-certbot-nginx postgresql postgresql-contrib \
+                   nodejs npm git ufw
+
+    ufw allow OpenSSH
+    ufw allow 'Nginx Full'
+    ufw --force enable
+
+    # 2GB swap (essential on 1GB droplet)
+    fallocate -l 2G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+────────────────────────────────────────────────────────────────────────────────
+B4. PostgreSQL
+────────────────────────────────────────────────────────────────────────────────
+    DB_PASSWORD=$(openssl rand -base64 24)
+    echo "DB password: $DB_PASSWORD"   # SAVE THIS
+
+    sudo -u postgres psql <<EOF
+    CREATE USER eduly_user WITH ENCRYPTED PASSWORD '$DB_PASSWORD';
+    CREATE DATABASE eduly OWNER eduly_user;
+    GRANT ALL PRIVILEGES ON DATABASE eduly TO eduly_user;
+    EOF
+
+────────────────────────────────────────────────────────────────────────────────
+B5. Clone code + setup backend
+────────────────────────────────────────────────────────────────────────────────
+    mkdir -p /var/www/eduly && cd /var/www/eduly
+    git clone <YOUR_REPO_URL> .
+
+    cd backend
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    pip install psycopg2-binary
+
+Create .env (paste DB_PASSWORD from B4):
+
+    SECRET=$(openssl rand -hex 32)
+    cat > /var/www/eduly/backend/.env <<EOF
+    DEBUG=false
+    DATABASE_URL=postgresql://eduly_user:$DB_PASSWORD@localhost:5432/eduly
+    SECRET_KEY=$SECRET
+    ALGORITHM=HS256
+    ACCESS_TOKEN_EXPIRE_MINUTES=30
+    CORS_ORIGINS=http://<DROPLET_IP>,https://amorabox.uz,https://www.amorabox.uz,https://localhost,capacitor://localhost,http://localhost
+    EDULY_TZ=Asia/Tashkent
+    EOF
+    chmod 600 /var/www/eduly/backend/.env
+
+GOTCHA: For mobile APK to work later, CORS_ORIGINS MUST include
+        capacitor://localhost AND http://localhost.
+
+Run migrations:
+
+    cd /var/www/eduly/backend && source venv/bin/activate
+    alembic upgrade head
+
+────────────────────────────────────────────────────────────────────────────────
+B6. systemd service
+────────────────────────────────────────────────────────────────────────────────
+    cat > /etc/systemd/system/eduly.service <<'EOF'
+    [Unit]
+    Description=Eduly API
+    After=network.target postgresql.service
+
+    [Service]
+    User=www-data
+    Group=www-data
+    WorkingDirectory=/var/www/eduly/backend
+    Environment="PATH=/var/www/eduly/backend/venv/bin"
+    ExecStart=/var/www/eduly/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+    Restart=always
+    RestartSec=5
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+
+    chown -R www-data:www-data /var/www/eduly
+    systemctl daemon-reload
+    systemctl enable --now eduly
+    systemctl status eduly --no-pager
+    curl http://127.0.0.1:8000/api/health
+
+────────────────────────────────────────────────────────────────────────────────
+B7. Create super admin (USER FORMAT THAT WORKS — line by line)
+────────────────────────────────────────────────────────────────────────────────
+GOTCHA: many SSH terminals (Termius, etc.) mangle multiline paste — they add
+        leading spaces and break heredocs. The proven recipe is to write
+        the script ONE LINE AT A TIME with `echo`.
+
+    cd /var/www/eduly/backend
+    source venv/bin/activate
+
+    echo "from app.core.security import hash_password" > /tmp/r.py
+    echo "from app.database import SessionLocal" >> /tmp/r.py
+    echo "from app.models.models import User, UserRole" >> /tmp/r.py
+    echo "db = SessionLocal()" >> /tmp/r.py
+    echo "u = db.query(User).filter(User.email == 'dturgunboyev635@gmail.com').first()" >> /tmp/r.py
+    echo "if not u: u = User(email='dturgunboyev635@gmail.com', full_name='Super Admin', role=UserRole.SUPER_ADMIN, is_active=True, center_id=None, hashed_password=hash_password('Diyorbek2005@')); db.add(u)" >> /tmp/r.py
+    echo "else: u.hashed_password = hash_password('Diyorbek2005@'); u.role = UserRole.SUPER_ADMIN; u.is_active = True; u.center_id = None" >> /tmp/r.py
+    echo "db.commit()" >> /tmp/r.py
+    echo "print('OK', u.email, u.role)" >> /tmp/r.py
+    echo "db.close()" >> /tmp/r.py
+
+    cat /tmp/r.py    # verify it looks right
+    PYTHONPATH=/var/www/eduly/backend python3 /tmp/r.py
+
+Expected: "OK dturgunboyev635@gmail.com UserRole.SUPER_ADMIN"
+(bcrypt warning is harmless — passlib version mismatch)
+
+GOTCHA: do NOT run `python3 /tmp/r.py` without PYTHONPATH — it fails with
+        "ModuleNotFoundError: No module named 'app'" because Python adds
+        /tmp to sys.path, not the cwd.
+
+────────────────────────────────────────────────────────────────────────────────
+B8. Build SPAs (laptop) and upload
+────────────────────────────────────────────────────────────────────────────────
+On laptop. First fix .env.production files to use relative /api:
+
+    cd "/home/diyorbek/Downloads/eduly(11)"
+    grep VITE_API_BASE_URL .env.production super-admin/.env.production edusaas-teacher-dashboard/.env.production
+    # all three must show: VITE_API_BASE_URL=/api
+
+If wrong, edit each and rebuild:
+
+    npm run build
+    ( cd super-admin && npm run build )
+    ( cd edusaas-teacher-dashboard && npm run build )
+
+Upload:
+
+    rsync -avz --delete dist/                             root@<IP>:/var/www/eduly/admin/
+    rsync -avz --delete super-admin/dist/                 root@<IP>:/var/www/eduly/super-admin/
+    rsync -avz --delete edusaas-teacher-dashboard/dist/   root@<IP>:/var/www/eduly/teacher/
+    ssh root@<IP> "chown -R www-data:www-data /var/www/eduly"
+
+────────────────────────────────────────────────────────────────────────────────
+B9. nginx
+────────────────────────────────────────────────────────────────────────────────
+    cp /var/www/eduly/deployment/nginx.amorabox.conf /etc/nginx/sites-available/eduly
+    ln -sf /etc/nginx/sites-available/eduly /etc/nginx/sites-enabled/eduly
+    rm -f /etc/nginx/sites-enabled/default
+
+If you don't have a domain yet, accept any Host so the IP works:
+
+    sed -i 's|server_name amorabox.uz www.amorabox.uz;|server_name _;|' /etc/nginx/sites-enabled/eduly
+
+Test + reload:
+
+    nginx -t
+    systemctl reload nginx
+
+────────────────────────────────────────────────────────────────────────────────
+B10. SSL (only if domain DNS resolves)
+────────────────────────────────────────────────────────────────────────────────
+GOTCHA: certbot will FAIL if dig amorabox.uz returns nothing. Verify first:
+
+    dig amorabox.uz +short        # must return droplet IP
+
+If yes:
+
+    certbot --nginx -d amorabox.uz -d www.amorabox.uz \
+            --non-interactive --agree-tos \
+            --email dturgunboyev635@gmail.com --redirect
+
+    # update CORS to use https
+    sed -i 's|^CORS_ORIGINS=.*|CORS_ORIGINS=https://amorabox.uz,https://www.amorabox.uz,https://localhost,capacitor://localhost,http://localhost|' /var/www/eduly/backend/.env
+    systemctl restart eduly
+
+────────────────────────────────────────────────────────────────────────────────
+B11. Backup cron (production hardening)
+────────────────────────────────────────────────────────────────────────────────
+    mkdir -p /var/backups/eduly
+
+    cat > /usr/local/bin/eduly-backup <<'EOF'
+    #!/bin/bash
+    DATE=$(date +%F)
+    sudo -u postgres pg_dump eduly | gzip > /var/backups/eduly/eduly-$DATE.sql.gz
+    find /var/backups/eduly -mtime +14 -delete
+    EOF
+    chmod +x /usr/local/bin/eduly-backup
+
+    echo "0 2 * * * /usr/local/bin/eduly-backup >> /var/log/eduly-backup.log 2>&1" | crontab -
+
+
+================================================================================
+PART C — COMMON GOTCHAS WE HIT (READ BEFORE DEBUGGING)
+================================================================================
+
+1. "fatal: detected dubious ownership"
+   → git config --global --add safe.directory /var/www/eduly
+
+2. "Network Error" on login page
+   → frontend was built with absolute API URL that doesn't resolve
+   → fix .env.production to VITE_API_BASE_URL=/api, rebuild, upload
+
+3. "ModuleNotFoundError: No module named 'app'"
+   → running python from /tmp without PYTHONPATH
+   → use: PYTHONPATH=/var/www/eduly/backend python3 /tmp/r.py
+
+4. "IndentationError: unexpected indent" when pasting heredocs
+   → terminal added leading spaces during paste
+   → solution: write file line-by-line with `echo "x" >> file`
+
+5. "Could not resolve host: amorabox.uz" from server
+   → server's DNS resolver broken OR domain DNS not propagated
+   → fix resolver: echo "nameserver 8.8.8.8" > /etc/resolv.conf
+   → or test from laptop: dig amorabox.uz +short
+
+6. "ls: /etc/letsencrypt/live/: No such file"
+   → SSL cert was never issued; run certbot (B10)
+
+7. eduly.service fails to start after git pull
+   → forgot to chown -R www-data:www-data /var/www/eduly
+
+8. systemctl status shows "active (running)" but curl times out
+   → check it's bound to 127.0.0.1:8000 (not 0.0.0.0)
+   → check nginx upstream config
+
+9. Mobile APK can't reach backend
+   → CORS_ORIGINS in /var/www/eduly/backend/.env missing
+     https://localhost,capacitor://localhost,http://localhost
+   → systemctl restart eduly after editing
+
+10. "email yoki parol noto'g'ri" but password should be right
+    → user exists but with old hashed_password; reset it via B7 script
+    → OR backend can't reach DB; check journalctl -u eduly -n 50
+
+
+================================================================================
+PART D — USEFUL COMMANDS
+================================================================================
+
+  # backend logs (live tail)
+  journalctl -u eduly -f
+
+  # restart everything
+  systemctl restart eduly && systemctl reload nginx
+
+  # check what nginx sees
+  grep -h server_name /etc/nginx/sites-enabled/*
+
+  # check who owns repo
+  ls -la /var/www/eduly | head
+
+  # database shell
+  sudo -u postgres psql eduly
+
+  # see all users in DB
+  sudo -u postgres psql eduly -c "SELECT email, role, is_active FROM users;"
+
+  # reset any user's password (replace EMAIL and PASS)
+  cd /var/www/eduly/backend && source venv/bin/activate
+  PYTHONPATH=/var/www/eduly/backend python3 /tmp/r.py
+  # (after editing the email/password lines in /tmp/r.py)
+
+
+================================================================================
+PART E — CURRENT CREDENTIALS (REMOVE BEFORE COMMITTING TO PUBLIC REPO)
+================================================================================
+
+Droplet IP:           164.90.223.92
+SSH:                  ssh root@164.90.223.92
+Domain (planned):     amorabox.uz  (DNS configured, SSL not yet)
+Super admin email:    dturgunboyev635@gmail.com
+Super admin password: Diyorbek2005@   ← change after first login
+DB user:              eduly_user
+DB name:              eduly
+DB password:          (stored in /var/www/eduly/backend/.env on server)
+
+================================================================================
+END
+================================================================================

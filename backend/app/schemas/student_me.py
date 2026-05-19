@@ -31,6 +31,7 @@ class MyProfileOut(BaseModel):
     debt: float
     paid: float
     group_names: list[str] = []
+    homework_strikes: int = 0
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -83,6 +84,32 @@ class MyAttendanceOut(BaseModel):
     absent_count: int
     late_count: int
     excused_count: int
+
+
+# ── Learning Path ─────────────────────────────────────────────────────────────
+
+
+class LearningPathItem(BaseModel):
+    group_id: int
+    group_name: str
+    course_name: str
+    teacher_name: str
+    enrolled_at: date
+    max_duration_months: int | None = None
+    target_completion_date: date | None = None
+    days_elapsed: int
+    days_total: int | None = None
+    days_remaining: int | None = None
+    time_progress_pct: float
+    homework_done: int
+    homework_total: int
+    homework_pct: float
+    is_behind: bool
+
+
+class MyLearningPathOut(BaseModel):
+    items: list[LearningPathItem]
+    total: int
 
 
 # ── Payments ──────────────────────────────────────────────────────────────────

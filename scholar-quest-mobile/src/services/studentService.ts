@@ -1,7 +1,9 @@
 import { api } from '../lib/api';
 import type {
   LoginResponse,
+  MaterialItem,
   MyAttendance,
+  MyLearningPath,
   MyPayments,
   MyProfile,
   MySchedule,
@@ -43,6 +45,9 @@ export const studentService = {
   payments: (params?: { page?: number; limit?: number }) =>
     api.get<MyPayments>('/students/me/payments', params),
   homework: () => api.get<MyHomework>('/homework/students/me'),
+  learningPath: () => api.get<MyLearningPath>('/students/me/learning-path'),
+  materials: (group_id?: number) =>
+    api.get<MaterialItem[]>('/materials/my', group_id ? { group_id } : undefined),
 };
 
 export interface MyHomeworkItem {
